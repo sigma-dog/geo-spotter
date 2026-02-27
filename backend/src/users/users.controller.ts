@@ -13,11 +13,9 @@ import {
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { JwtAuthGuard } from 'src/auth/jwt.guard';
+import { JwtAuthGuard } from '../auth/jwt.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
-import { CurrentUserId } from 'src/shared/shared.decorators';
+import { CurrentUserId } from '../shared/shared.decorators';
 
 @Controller('users')
 export class UsersController {
@@ -40,23 +38,12 @@ export class UsersController {
     }
 
     @Post('avatar')
-    @UseInterceptors(
-        FileInterceptor('file', {
-            storage: diskStorage({
-                destination: './uploads/avatars',
-                filename: (req, file, cb) => {
-                    const uniqueSuffix =
-                        Date.now() + extname(file.originalname);
-                    cb(null, req.user?.userId + '_' + uniqueSuffix);
-                },
-            }),
-        })
-    )
-    uploadAvatar(
+    @UseInterceptors(FileInterceptor('file'))
+    async uploadAvatar(
         @UploadedFile() file: Express.Multer.File,
         @CurrentUserId() userId: string
     ) {
-        return this.usersService.updateAvatar(userId, file.filename);
+        return this.usersService.updateAvatar(userId, file);
     }
 
     @Patch(':id')

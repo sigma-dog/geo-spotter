@@ -1,24 +1,21 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+    BadRequestException,
+    Injectable,
+    NotFoundException,
+} from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { Prisma, User } from 'generated/prisma/client';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { ConfigService } from '@nestjs/config';
+import { S3Service } from '../S3/S3.service';
+import { MAX_AVATAR_IMAGE_SIZE_BYTES } from './users.constants';
 
 @Injectable()
 export class UsersService {
     constructor(
         private readonly prismaService: PrismaService,
-        private readonly configService: ConfigService
+        private readonly s3Service: S3Service
     ) {}
-
-    getAbsoluteAvatarUrl(relativeUrl: string) {
-        const protocol = this.configService.get<string>('API_PROTOCOL');
-        const host = this.configService.get<string>('API_HOST');
-        const port = this.configService.get<string>('API_PORT');
-
-        return `${protocol}://${host}:${port}${relativeUrl}`;
-    }
 
     async create(dto: CreateUserDto): Promise<User> {
         const user = await this.prismaService.user.create({
@@ -34,38 +31,19 @@ export class UsersService {
     }
 
     async findById(id: string): Promise<User | null> {
-        const user = await this.prismaService.user.findFirst({
+        return this.prismaService.user.findFirst({
             where: { id },
         });
-
-        if (user && user.avatarUrl) {
-            user.avatarUrl = this.getAbsoluteAvatarUrl(user.avatarUrl);
-        }
-
-        return user;
     }
 
     async findByEmail(email: string): Promise<User | null> {
-        const user = await this.prismaService.user.findFirst({
+        return this.prismaService.user.findFirst({
             where: { email },
         });
-
-        if (user && user.avatarUrl) {
-            user.avatarUrl = this.getAbsoluteAvatarUrl(user.avatarUrl);
-        }
-
-        return user;
     }
 
     async findAll(): Promise<User[]> {
-        const users = await this.prismaService.user.findMany();
-
-        return users.map((user) => {
-            if (user.avatarUrl) {
-                user.avatarUrl = this.getAbsoluteAvatarUrl(user.avatarUrl);
-            }
-            return user;
-        });
+        return this.prismaService.user.findMany();
     }
 
     async update(id: string, updateUserDto: UpdateUserDto): Promise<User> {
@@ -85,32 +63,63 @@ export class UsersService {
         if (email) data.email = email;
         if (birthDate) data.birthDate = new Date(birthDate);
 
-        const user = await this.prismaService.user.update({
+        return this.prismaService.user.update({
             data,
             where: { id },
         });
-
-        if (user.avatarUrl) {
-            user.avatarUrl = this.getAbsoluteAvatarUrl(user.avatarUrl);
-        }
-
-        return user;
     }
 
     async remove(id: string) {
         await this.prismaService.user.delete({ where: { id } });
     }
 
-    async updateAvatar(userId: string, filename: string) {
-        const avatarRelativeUrl = `/uploads/avatars/${filename}`;
+    async updateAvatar(userId: string, file: Express.Multer.File) {
+        if (!file) {
+            throw new BadRequestException('Файл не предоставлен');
+        }
 
-        await this.prismaService.user.update({
-            where: { id: userId },
-            data: { avatarUrl: avatarRelativeUrl },
+        if (!file.mimetype.startsWith('image/')) {
+            throw new BadRequestException('Можно загружать только изображения');
+        }
+
+        // Ограничение размера (например, 5MB)
+        if (file.size > MAX_AVATAR_IMAGE_SIZE_BYTES) {
+            throw new BadRequestException(
+                'Размер файла не должен превышать 5MB'
+            );
+        }
+
+        const currentUser = await this.findById(userId);
+
+        if (!currentUser) {
+            throw new NotFoundException(
+                `Пользователь с id ${userId} не существует`
+            );
+        }
+
+        const fileExtension = file.originalname.split('.').pop();
+        const fileKey = `avatars/${userId}/${Date.now()}.${fileExtension}`;
+
+        const avatarUrl = await this.s3Service.uploadFile({
+            fileKey,
+            buffer: file.buffer,
+            contentType: file.mimetype,
         });
 
-        return {
-            avatarUrl: this.getAbsoluteAvatarUrl(avatarRelativeUrl),
-        };
+        // Удаляем старую аватарку из S3 (если она была)
+        if (currentUser?.avatarUrl) {
+            const oldAvatarFileKey = this.s3Service.parseFileKeyFromUrl(
+                currentUser.avatarUrl
+            );
+
+            this.s3Service.removeFile(oldAvatarFileKey).catch(console.error);
+        }
+
+        const user = await this.prismaService.user.update({
+            where: { id: userId },
+            data: { avatarUrl },
+        });
+
+        return { avatarUrl: user.avatarUrl };
     }
 }

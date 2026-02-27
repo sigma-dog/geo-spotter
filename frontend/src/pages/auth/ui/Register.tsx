@@ -10,7 +10,7 @@ type RegisterFormValues = {
     username: string;
     email: string;
     password: string;
-    birthdate: string;
+    birthDate: string;
 };
 
 export const Register = () => {
@@ -27,11 +27,11 @@ export const Register = () => {
 
     const onSubmit = async (data: RegisterFormValues) => {
         try {
-            const formattedBirthdate = new Date(data.birthdate).toISOString();
+            const formattedBirthdate = new Date(data.birthDate).toISOString();
 
             const userData = await registerUser({
                 ...data,
-                birthdate: formattedBirthdate,
+                birthDate: formattedBirthdate,
             }).unwrap();
 
             setUserInfo(userData);
@@ -110,19 +110,19 @@ export const Register = () => {
                     </Field.ErrorText>
                 </Field.Root>
 
-                <Field.Root invalid={!!errors.birthdate}>
+                <Field.Root invalid={!!errors.birthDate}>
                     <Field.Label>Введите вашу дату рождения</Field.Label>
                     <Input
                         placeholder="Дата рождения"
                         variant="subtle"
                         size="md"
                         type="date"
-                        {...register('birthdate', {
+                        {...register('birthDate', {
                             required: 'Дата рождения обязательна',
                         })}
                     />
                     <Field.ErrorText>
-                        {errors.birthdate?.message}
+                        {errors.birthDate?.message}
                     </Field.ErrorText>
                 </Field.Root>
             </Flex>

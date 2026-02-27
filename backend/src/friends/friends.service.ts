@@ -90,7 +90,15 @@ export class FriendsService {
         });
     }
 
-    async getFriends(userId: string) {
+    async getFriends({
+        userId,
+        offset = 0,
+        limit = 20,
+    }: {
+        userId: string;
+        offset: number;
+        limit: number;
+    }) {
         const isUserExist = await this.usersService.findById(userId);
 
         if (!isUserExist) {
@@ -106,11 +114,21 @@ export class FriendsService {
                 requester: true,
                 addressee: true,
             },
+            skip: offset,
+            take: limit,
+            orderBy: {
+                createdAt: 'desc',
+            },
         });
 
-        return friendships.map((f) =>
+        const friends = friendships.map((f) =>
             f.requesterId === userId ? f.addressee : f.requester
         );
+
+        return {
+            items: friends,
+            hasMore: friends.length === limit,
+        };
     }
 
     async getIncomingRequests(userId: string) {

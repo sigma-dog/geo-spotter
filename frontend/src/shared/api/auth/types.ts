@@ -1,8 +1,7 @@
-export type RegisterBody = {
-    username: string;
-    email: string;
+import type { User } from 'shared/types';
+
+export type RegisterBody = Pick<User, 'username' | 'email' | 'birthDate'> & {
     password: string;
-    birthdate: string;
 };
 
-export type LoginBody = Omit<RegisterBody, 'username' | 'birthdate'>;
+export type LoginBody = Omit<RegisterBody, 'username' | 'birthDate'>;
