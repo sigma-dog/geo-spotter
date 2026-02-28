@@ -1,5 +1,12 @@
-import { LuSearch } from 'react-icons/lu';
-import { Flex, Heading, Input, InputGroup, VStack } from '@chakra-ui/react';
+import { LuSearch, LuUserRoundPlus } from 'react-icons/lu';
+import {
+    Flex,
+    Heading,
+    Input,
+    InputGroup,
+    Text,
+    VStack,
+} from '@chakra-ui/react';
 
 import type { User } from 'shared/types';
 
@@ -7,98 +14,7 @@ import { FriendItem } from './FriendItem';
 
 export type Friend = Omit<User, 'email' | 'birthDate' | 'xp'>;
 
-const mockFriends: Friend[] = [
-    {
-        id: '1',
-        username: 'Dasha',
-        level: 88,
-        avatarUrl: null,
-    },
-    {
-        id: '2',
-        username: 'Amir',
-        level: 13,
-        avatarUrl: null,
-    },
-    {
-        id: '3',
-        username: 'Julia',
-        level: 42,
-        avatarUrl: null,
-    },
-    {
-        id: '4',
-        username: 'Alina',
-        level: 69,
-        avatarUrl: null,
-    },
-    {
-        id: '1',
-        username: 'Dasha',
-        level: 88,
-        avatarUrl: null,
-    },
-    {
-        id: '2',
-        username: 'Amir',
-        level: 13,
-        avatarUrl: null,
-    },
-    {
-        id: '3',
-        username: 'Julia',
-        level: 42,
-        avatarUrl: null,
-    },
-    {
-        id: '4',
-        username: 'Alina',
-        level: 69,
-        avatarUrl: null,
-    },
-    {
-        id: '1',
-        username: 'Dasha',
-        level: 88,
-        avatarUrl: null,
-    },
-    {
-        id: '2',
-        username: 'Amir',
-        level: 13,
-        avatarUrl: null,
-    },
-    {
-        id: '3',
-        username: 'Julia',
-        level: 42,
-        avatarUrl: null,
-    },
-    {
-        id: '4',
-        username: 'Alina',
-        level: 69,
-        avatarUrl: null,
-    },
-    {
-        id: '1',
-        username: 'Dasha',
-        level: 88,
-        avatarUrl: null,
-    },
-    {
-        id: '2',
-        username: 'Amir',
-        level: 13,
-        avatarUrl: null,
-    },
-    {
-        id: '3',
-        username: 'Julia',
-        level: 42,
-        avatarUrl: null,
-    },
-];
+const mockFriends: Friend[] = [];
 
 export const Friends = () => {
     return (
@@ -113,7 +29,10 @@ export const Friends = () => {
             maxHeight="full"
             overflow="hidden"
         >
-            <Heading size="md">Друзья</Heading>
+            <Flex align="center" justify="space-between">
+                <Heading size="md">Друзья</Heading>
+                <LuUserRoundPlus size={16} cursor="pointer" />
+            </Flex>
 
             <InputGroup startElement={<LuSearch />}>
                 <Input
@@ -123,10 +42,16 @@ export const Friends = () => {
                 />
             </InputGroup>
 
-            <VStack w="full" overflowY="scroll">
+            <VStack w="full" overflowY="auto">
                 {mockFriends.map((friend, index) => (
                     <FriendItem {...friend} key={index} />
                 ))}
+
+                {!mockFriends.length && (
+                    <Text textStyle="sm" color="gray.600">
+                        Список пуст
+                    </Text>
+                )}
             </VStack>
         </Flex>
     );
