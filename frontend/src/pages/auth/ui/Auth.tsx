@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Box, Center, Flex, Heading, Text } from '@chakra-ui/react';
-import background from 'assets/register-bg.jpg';
+import { Box, Center, Flex, Image, Text } from '@chakra-ui/react';
+import logo from 'assets/logo.svg';
+import background from 'assets/register-bg-light.webp';
 
 import { Login } from './Login';
 import { Register } from './Register';
@@ -38,7 +39,7 @@ const Auth = () => {
                 left={0}
                 w="100vw"
                 h="100vh"
-                style={{ perspective: '1200px' }}
+                style={{ perspective: '1700px' }}
                 zIndex={-1}
             >
                 <Box
@@ -47,7 +48,7 @@ const Auth = () => {
                     backgroundImage={`url('${background}')`}
                     backgroundSize="cover"
                     backgroundPosition="center"
-                    filter="blur(4px)"
+                    filter="blur(4px) brightness(.9) "
                     transform={`rotateX(${tilt.rx}deg) rotateY(${tilt.ry}deg) scale(1.1)`}
                     transition="transform 0.08s ease-out"
                 />
@@ -63,7 +64,8 @@ const Auth = () => {
                     gap={10}
                     borderRadius="lg"
                 >
-                    <Heading size="4xl">GeoSpotter</Heading>
+                    {/* <Heading size="4xl">GeoSpotter</Heading> */}
+                    <Image src={logo} h="10" />
                     {mode === 'login' ? <Login /> : <Register />}
                     <Flex gap={1} w="full" justifyContent="space-between">
                         <Text>Впервые у нас?</Text>

@@ -36,7 +36,10 @@ export const ProfileInfo: FC<ProfileInfoProps> = ({ openEditProfilePanel }) => {
                     <Flex w="full">
                         <Flex w="full" justifyContent="space-between">
                             <Flex gap={4} alignItems="center" grow={1}>
-                                <Avatar.Root>
+                                <Avatar.Root
+                                    cursor="pointer"
+                                    onClick={openEditProfilePanel}
+                                >
                                     <Avatar.Fallback />
                                     <Avatar.Image
                                         src={data.avatarUrl ?? undefined}

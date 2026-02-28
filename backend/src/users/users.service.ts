@@ -9,6 +9,7 @@ import { Prisma, User } from 'generated/prisma/client';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { S3Service } from '../S3/S3.service';
 import { MAX_AVATAR_IMAGE_SIZE_BYTES } from './users.constants';
+import sharp from 'sharp';
 
 @Injectable()
 export class UsersService {
@@ -97,13 +98,24 @@ export class UsersService {
             );
         }
 
-        const fileExtension = file.originalname.split('.').pop();
-        const fileKey = `avatars/${userId}/${Date.now()}.${fileExtension}`;
+        const compressedImageBuffer = await sharp(file.buffer)
+            .resize(300, 300, {
+                fit: 'cover',
+                position: 'center',
+            })
+            .webp({
+                quality: 80,
+                effort: 4, // баланс между скоростью и сжатием
+                alphaQuality: 80, // качество для прозрачности
+            })
+            .toBuffer();
+
+        const fileKey = `avatars/${userId}/${Date.now()}.webp`;
 
         const avatarUrl = await this.s3Service.uploadFile({
             fileKey,
-            buffer: file.buffer,
-            contentType: file.mimetype,
+            buffer: compressedImageBuffer,
+            contentType: 'image/webp',
         });
 
         // Удаляем старую аватарку из S3 (если она была)

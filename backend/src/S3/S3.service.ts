@@ -53,18 +53,6 @@ export class S3Service {
 
     async removeFile(fileKey: string): Promise<void> {
         try {
-            // Извлекаем ключ файла из URL
-            // URL формата: https://s3.timeweb.com/bucket-name/avatars/userId/filename.jpg
-            // const urlParts = avatarUrl.split('/');
-            // const bucketIndex = urlParts.indexOf(this.bucketName);
-
-            // if (bucketIndex === -1) {
-            //     return; // Не наш бакет, возможно это Cloudinary URL
-            // }
-
-            // // Ключ - это всё после названия бакета
-            // const fileKey = urlParts.slice(bucketIndex + 1).join('/');
-
             const command = new DeleteObjectCommand({
                 Bucket: this.bucketName,
                 Key: fileKey,
@@ -72,7 +60,6 @@ export class S3Service {
 
             await this.s3Client.send(command);
         } catch (error) {
-            // Логируем ошибку, но не прерываем выполнение
             console.error('Ошибка при удалении файла:', error);
         }
     }
