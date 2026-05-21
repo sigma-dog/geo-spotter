@@ -10,13 +10,16 @@ export type SendFriendRequestBody = { addresseeId: string };
 
 const friendsApi = api.injectEndpoints({
     endpoints: (build) => ({
-        getUsers: build.query<User[], void>({
-            query: () => ({
+        getUsers: build.query<User[], string>({
+            query: (search) => ({
                 url: '/users',
                 method: apiMethods.get,
+                params: {
+                    search,
+                },
             }),
         }),
     }),
 });
 
-export const { useGetUsersQuery } = friendsApi;
+export const { useLazyGetUsersQuery } = friendsApi;

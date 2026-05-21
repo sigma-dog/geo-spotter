@@ -65,6 +65,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 ### Import Order (Frontend)
 
 Groups (configured in eslint.config.js):
+
 1. React packages
 2. Absolute paths (`app/`, `features/`, `entities/`, `shared/`)
 3. Relative imports
@@ -81,6 +82,8 @@ Groups (configured in eslint.config.js):
 
 ### TypeScript
 
+- Don't use interfaces at frontend, use types instead
+- Don't use ENUM's, use object with 'as const' instead
 - Enable `strictNullChecks`
 - Avoid `any` - use `unknown` or proper types
 - Use `interface` for objects, `type` for unions/aliases
@@ -99,6 +102,7 @@ throw new NotFoundException(`User with id ${id} not found`);
 ### NestJS Patterns
 
 **Module structure**:
+
 ```typescript
 @Module({
     imports: [...],
@@ -154,11 +158,13 @@ frontend/
 Uses Prisma ORM with PostgreSQL (production) or SQLite (development).
 
 **Generate Prisma client**:
+
 ```bash
 npx prisma generate
 ```
 
 **Run migrations**:
+
 ```bash
 npx prisma migrate dev
 npx prisma migrate deploy  # production
@@ -169,6 +175,7 @@ npx prisma migrate deploy  # production
 ## Environment Variables
 
 ### Backend (.env)
+
 ```
 DATABASE_URL=postgresql://...
 CLOUDINARY_NAME=...
@@ -181,6 +188,7 @@ API_PORT=3000
 ```
 
 ### Frontend
+
 Configure via Vite environment variables (`VITE_...`).
 
 ---
@@ -211,11 +219,12 @@ Configure via Vite environment variables (`VITE_...`).
 npm install <package>
 npm install -D @types/<package>
 
-# Frontend  
+# Frontend
 npm install <package>
 ```
 
 After adding Prisma-related packages, regenerate the client:
+
 ```bash
 npx prisma generate
 ```

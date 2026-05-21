@@ -9,6 +9,7 @@ import {
     UseGuards,
     UseInterceptors,
     UploadedFile,
+    Query,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -28,8 +29,11 @@ export class UsersController {
 
     @UseGuards(JwtAuthGuard)
     @Get()
-    findAll(@CurrentUserId() userId: string) {
-        return this.usersService.findAll(userId);
+    findAll(
+        @CurrentUserId() userId: string,
+        @Query('search') search?: string
+    ) {
+        return this.usersService.findAll(userId, search);
     }
 
     @Get(':id')

@@ -63,14 +63,23 @@ export const baseQueryWithReauth: BaseQueryFn<
                     extraOptions
                 );
 
-                const tokens = refreshResult.data as Tokens;
+                const tokens =
+                    refreshResult.data &&
+                    typeof refreshResult.data === 'object' &&
+                    'access' in refreshResult.data &&
+                    'refresh' in refreshResult.data
+                        ? (refreshResult.data as Tokens)
+                        : null;
 
                 if (tokens) {
                     setAccessToken(tokens.access);
                     setRefreshToken(tokens.refresh);
                     result = await baseQuery(args, api, extraOptions);
                 } else {
-                    console.error('Unable to refresh token');
+                    console.error(
+                        'Unable to refresh token',
+                        refreshResult.error ?? refreshResult.data
+                    );
 
                     removeAccessToken();
                     removeRefreshToken();

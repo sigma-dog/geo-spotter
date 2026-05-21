@@ -55,13 +55,34 @@ export class UsersService {
         });
     }
 
-    async findAll(userId: string): Promise<UsersListItem[]> {
+    async findAll(userId: string, search?: string): Promise<UsersListItem[]> {
+        const normalizedSearch = search?.trim();
+
         const users = await this.prismaService.user.findMany({
             where: {
                 id: {
                     not: userId,
                 },
+                ...(normalizedSearch
+                    ? {
+                          OR: [
+                              {
+                                  username: {
+                                      contains: normalizedSearch,
+                                      mode: 'insensitive' as const,
+                                  },
+                              },
+                              {
+                                  email: {
+                                      contains: normalizedSearch,
+                                      mode: 'insensitive' as const,
+                                  },
+                              },
+                          ],
+                      }
+                    : {}),
             },
+            take: normalizedSearch ? 20 : 0,
             select: {
                 id: true,
                 username: true,

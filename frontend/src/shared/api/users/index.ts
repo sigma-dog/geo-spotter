@@ -1,1 +1,1 @@
-export { useGetUsersQuery } from './usersApi';
+export { useLazyGetUsersQuery } from './usersApi';
