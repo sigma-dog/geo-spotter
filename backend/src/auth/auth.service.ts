@@ -6,12 +6,12 @@ import {
 } from '@nestjs/common';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
-import { UsersService } from 'src/users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-import { User } from 'generated/prisma/client';
 import { ConfigService } from '@nestjs/config';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { UsersService } from '../users/users.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { User } from '../../generated/prisma/client';
 
 const HASH_SALT_ROUNDS = 10;
 

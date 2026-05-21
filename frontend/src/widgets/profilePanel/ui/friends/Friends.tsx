@@ -1,3 +1,4 @@
+import type { FC } from 'react';
 import { LuSearch, LuUserRoundPlus } from 'react-icons/lu';
 import {
     Flex,
@@ -8,15 +9,30 @@ import {
     VStack,
 } from '@chakra-ui/react';
 
+import { useGetFriendsInfiniteQuery } from 'shared/api/friends';
 import type { User } from 'shared/types';
 
 import { FriendItem } from './FriendItem';
 
 export type Friend = Omit<User, 'email' | 'birthDate' | 'xp'>;
 
-const mockFriends: Friend[] = [];
+type FriendsProps = {
+    openAddFriendsPanel: () => void;
+};
 
-export const Friends = () => {
+export const Friends: FC<FriendsProps> = ({ openAddFriendsPanel }) => {
+    const { data, isLoading, isError, error } = useGetFriendsInfiniteQuery({
+        offset: 0,
+        limit: 20,
+    });
+
+    if (isLoading) {
+        return <div>Загрузка...</div>;
+    }
+    if (isError) {
+        return <div>Ошибка: {error.toString()}</div>;
+    }
+
     return (
         <Flex
             direction="column"
@@ -31,7 +47,11 @@ export const Friends = () => {
         >
             <Flex align="center" justify="space-between">
                 <Heading size="md">Друзья</Heading>
-                <LuUserRoundPlus size={16} cursor="pointer" />
+                <LuUserRoundPlus
+                    size={16}
+                    cursor="pointer"
+                    onClick={openAddFriendsPanel}
+                />
             </Flex>
 
             <InputGroup startElement={<LuSearch />}>
@@ -42,17 +62,19 @@ export const Friends = () => {
                 />
             </InputGroup>
 
-            <VStack w="full" overflowY="auto">
-                {mockFriends.map((friend, index) => (
-                    <FriendItem {...friend} key={index} />
-                ))}
+            {data && (
+                <VStack w="full" overflowY="auto">
+                    {data.items.map((friend, index) => (
+                        <FriendItem {...friend} key={index} />
+                    ))}
 
-                {!mockFriends.length && (
-                    <Text textStyle="sm" color="gray.600">
-                        Список пуст
-                    </Text>
-                )}
-            </VStack>
+                    {!data.items.length && (
+                        <Text textStyle="sm" color="gray.600">
+                            Список пуст
+                        </Text>
+                    )}
+                </VStack>
+            )}
         </Flex>
     );
 };

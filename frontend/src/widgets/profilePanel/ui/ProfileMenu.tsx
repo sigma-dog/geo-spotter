@@ -3,6 +3,7 @@ import { GiHamburgerMenu } from 'react-icons/gi';
 import { useNavigate } from 'react-router-dom';
 import { IconButton, Menu, Portal } from '@chakra-ui/react';
 
+import { useLogoutMutation } from 'shared/api/auth';
 import { removeAccessToken, removeRefreshToken } from 'shared/api/tokensUtils';
 import { useConfirmDialog } from 'shared/hooks';
 import { removeUserInfo } from 'shared/lib';
@@ -14,6 +15,8 @@ type ProfileMenuProps = {
 export const ProfileMenu: FC<ProfileMenuProps> = ({ openEditProfilePanel }) => {
     const navigate = useNavigate();
 
+    const [logout] = useLogoutMutation();
+
     const [ConfirmLogoutDialog, openConfirmLogoutDialog] = useConfirmDialog({
         title: 'Выход',
         message: 'Вы действительно хотите выйти из аккаунта?',
@@ -21,13 +24,15 @@ export const ProfileMenu: FC<ProfileMenuProps> = ({ openEditProfilePanel }) => {
         cancelText: 'Нет, остаться',
     });
 
-    const logout = () => {
-        openConfirmLogoutDialog().then((res) => {
+    const onLogout = () => {
+        openConfirmLogoutDialog().then(async (res) => {
             if (res === 'confirm') {
                 removeUserInfo();
 
                 removeAccessToken();
                 removeRefreshToken();
+
+                await logout();
 
                 navigate('/auth');
             }
@@ -54,7 +59,7 @@ export const ProfileMenu: FC<ProfileMenuProps> = ({ openEditProfilePanel }) => {
                             <Menu.Item
                                 value="logout"
                                 color="red"
-                                onClick={logout}
+                                onClick={onLogout}
                             >
                                 Выйти
                             </Menu.Item>

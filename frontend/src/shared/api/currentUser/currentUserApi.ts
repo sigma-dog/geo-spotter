@@ -12,7 +12,11 @@ export type UpdateUserBody = Partial<{
     birthdate: string;
 }>;
 
-export const currentUserApi = api.injectEndpoints({
+export type UpdateAvatarResponse = {
+    avatarUrl: string;
+};
+
+const currentUserApi = api.injectEndpoints({
     endpoints: (build) => ({
         getCurrentUserData: build.query<User, void>({
             query: () => ({
@@ -30,9 +34,21 @@ export const currentUserApi = api.injectEndpoints({
             }),
             invalidatesTags: [tagTypes.CurrentUser],
         }),
+
+        updateAvatar: build.mutation<UpdateAvatarResponse, FormData>({
+            query: (body: FormData) => ({
+                url: `${getUrl()}/avatar`,
+                method: apiMethods.post,
+                body,
+            }),
+            invalidatesTags: [tagTypes.CurrentUser],
+        }),
     }),
     overrideExisting: false,
 });
 
-export const { useGetCurrentUserDataQuery, useUpdateUserDataMutation } =
-    currentUserApi;
+export const {
+    useGetCurrentUserDataQuery,
+    useUpdateUserDataMutation,
+    useUpdateAvatarMutation,
+} = currentUserApi;

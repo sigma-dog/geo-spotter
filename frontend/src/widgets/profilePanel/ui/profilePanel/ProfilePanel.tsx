@@ -6,10 +6,12 @@ import { ProfileInfo } from '../ProfileIInfo';
 
 type ProfilePanelProps = {
     openEditProfilePanel: () => void;
+    openAddFriendsPanel: () => void;
 };
 
 export const ProfilePanel: FC<ProfilePanelProps> = ({
     openEditProfilePanel,
+    openAddFriendsPanel,
 }) => {
     return (
         <Flex
@@ -25,7 +27,7 @@ export const ProfilePanel: FC<ProfilePanelProps> = ({
             maxHeight="full"
         >
             <ProfileInfo openEditProfilePanel={openEditProfilePanel} />
-            <Friends />
+            <Friends openAddFriendsPanel={openAddFriendsPanel} />
         </Flex>
     );
 };

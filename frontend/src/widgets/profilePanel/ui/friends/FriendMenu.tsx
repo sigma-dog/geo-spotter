@@ -1,7 +1,21 @@
+import type { FC } from 'react';
 import { GiHamburgerMenu } from 'react-icons/gi';
 import { IoChatbubbleOutline, IoPersonRemoveOutline } from 'react-icons/io5';
-import { IconButton, Menu, Portal } from '@chakra-ui/react';
-export const FriendMenu = () => {
+import { IconButton, Menu, Portal, Spinner } from '@chakra-ui/react';
+
+import { useDeleteFriendMutation } from 'shared/api/friends';
+
+type FriendMenuProps = {
+    friendId: string;
+};
+
+export const FriendMenu: FC<FriendMenuProps> = ({ friendId }) => {
+    const [deleteFriend, { isLoading }] = useDeleteFriendMutation();
+
+    const handleDeleteFriend = () => {
+        deleteFriend({ friendId });
+    };
+
     return (
         <Menu.Root>
             <Menu.Trigger asChild>
@@ -16,9 +30,14 @@ export const FriendMenu = () => {
                             <IoChatbubbleOutline />
                             Написать сообщение
                         </Menu.Item>
-                        <Menu.Item value="logout" color="red">
+                        <Menu.Item
+                            value="logout"
+                            color="red"
+                            onClick={handleDeleteFriend}
+                        >
                             <IoPersonRemoveOutline />
                             Удалить из друзей
+                            {isLoading && <Spinner />}
                         </Menu.Item>
                     </Menu.Content>
                 </Menu.Positioner>

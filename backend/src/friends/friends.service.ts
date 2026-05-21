@@ -3,8 +3,8 @@ import {
     Injectable,
     NotFoundException,
 } from '@nestjs/common';
-import { PrismaService } from 'src/prisma/prisma.service';
-import { UsersService } from 'src/users/users.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class FriendsService {
@@ -187,5 +187,59 @@ export class FriendsService {
         return this.prismaService.friendship.delete({
             where: { id: friendship.id },
         });
+    }
+
+    async getAvailableFriends({
+        userId,
+        offset = 0,
+        limit = 20,
+    }: {
+        userId: string;
+        offset: number;
+        limit: number;
+    }) {
+        const isUserExist = await this.usersService.findById(userId);
+
+        if (!isUserExist) {
+            throw new NotFoundException(`User with id ${userId} is not exist`);
+        }
+
+        const availableFriends = await this.prismaService.user.findMany({
+            where: {
+                AND: [
+                    { id: { not: userId } },
+                    {
+                        NOT: {
+                            OR: [
+                                {
+                                    friendshipsInitiated: {
+                                        some: {
+                                            addresseeId: userId,
+                                        },
+                                    },
+                                },
+                                {
+                                    friendshipsReceived: {
+                                        some: {
+                                            requesterId: userId,
+                                        },
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                ],
+            },
+            skip: offset,
+            take: limit,
+            orderBy: {
+                createdAt: 'desc',
+            },
+        });
+
+        return {
+            items: availableFriends,
+            hasMore: availableFriends.length === limit,
+        };
     }
 }

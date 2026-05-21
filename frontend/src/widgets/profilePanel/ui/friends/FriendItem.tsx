@@ -4,7 +4,7 @@ import { Avatar, Flex, HStack, Text } from '@chakra-ui/react';
 import { FriendMenu } from './FriendMenu';
 import type { Friend } from './Friends';
 
-export const FriendItem: FC<Friend> = ({ username, level }) => {
+export const FriendItem: FC<Friend> = ({ id, username, level, avatarUrl }) => {
     return (
         <Flex
             gap={4}
@@ -15,7 +15,7 @@ export const FriendItem: FC<Friend> = ({ username, level }) => {
             <HStack alignItems="center" justifyContent="space-between">
                 <Avatar.Root>
                     <Avatar.Fallback />
-                    <Avatar.Image />
+                    <Avatar.Image src={avatarUrl ?? ''} />
                 </Avatar.Root>
                 <Flex direction="column">
                     <Text textStyle="md" fontWeight="semibold">
@@ -26,7 +26,7 @@ export const FriendItem: FC<Friend> = ({ username, level }) => {
                     </Text>
                 </Flex>
             </HStack>
-            <FriendMenu />
+            <FriendMenu friendId={id} />
         </Flex>
     );
 };

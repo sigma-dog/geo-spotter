@@ -8,9 +8,9 @@ import {
     Query,
 } from '@nestjs/common';
 import { FriendsService } from './friends.service';
-import { CurrentUserId } from 'src/shared/shared.decorators';
 import { SendFriendRequestDto } from './dto/sendFriendRequest.dto';
 import { RespondFriendRequestDto } from './dto/respondFriendRequest.dto';
+import { CurrentUserId } from '../shared/shared.decorators';
 
 @Controller('friends')
 export class FriendsController {
@@ -18,6 +18,19 @@ export class FriendsController {
 
     @Get()
     getFriends(
+        @CurrentUserId() userId: string,
+        @Query('offset') offset = '0',
+        @Query('limit') limit = '20'
+    ) {
+        return this.friendsService.getFriends({
+            userId,
+            offset: Number(offset),
+            limit: Number(limit),
+        });
+    }
+
+    @Get()
+    getAvailableFriends(
         @CurrentUserId() userId: string,
         @Query('offset') offset = '0',
         @Query('limit') limit = '20'

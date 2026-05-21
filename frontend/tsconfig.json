@@ -9,8 +9,7 @@
         }
     ],
     "compilerOptions": {
-        "baseUrl": ".",
-
+        // "baseUrl": ".",
         "paths": {
             "app/*": ["./src/app/*"],
             "css/*": ["./src/css/*"],

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { type FC, useState } from 'react';
 import { LuSearch, LuShare } from 'react-icons/lu';
 import {
     ActionBar,
@@ -8,12 +8,13 @@ import {
     Portal,
 } from '@chakra-ui/react';
 
+import { useOpenAddFriendsPanel } from 'widgets/addFriendsPanel';
 import { EditProfilePanel } from 'widgets/editProfilePanel';
 import { ProfilePanel } from 'widgets/profilePanel';
 
 import { Map } from './Map';
 
-const Home = () => {
+const Home: FC = () => {
     const [isOpenEditProfilePanel, setIsOpenEditProfilePanel] = useState(false);
 
     const handleCloseEditProfilePanel = ({ open }: DialogOpenChangeDetails) => {
@@ -24,11 +25,16 @@ const Home = () => {
         setIsOpenEditProfilePanel(true);
     };
 
+    const openAddFriendsPanel = useOpenAddFriendsPanel();
+
     return (
         <>
             <Flex w="full" h="full">
                 <Map />
-                <ProfilePanel openEditProfilePanel={openEditProfilePanel} />
+                <ProfilePanel
+                    openAddFriendsPanel={openAddFriendsPanel}
+                    openEditProfilePanel={openEditProfilePanel}
+                />
                 <EditProfilePanel
                     isOpen={isOpenEditProfilePanel}
                     onOpenChange={handleCloseEditProfilePanel}

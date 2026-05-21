@@ -2,6 +2,7 @@ import { api, apiMethods } from 'shared/api';
 import type { User } from 'shared/types';
 
 import type { LoginBody, RegisterBody } from './types';
+import { tagTypes } from '../constants';
 
 const getUrl = () => 'auth';
 
@@ -30,8 +31,14 @@ export const authApi = api.injectEndpoints({
                 body,
             }),
         }),
+
+        logout: build.mutation<void, void>({
+            queryFn: () => ({ data: undefined }), // Не делаем реального запроса
+            invalidatesTags: [tagTypes.CurrentUser],
+        }),
     }),
     overrideExisting: false,
 });
 
-export const { useLoginMutation, useRegisterMutation } = authApi;
+export const { useLoginMutation, useRegisterMutation, useLogoutMutation } =
+    authApi;

@@ -8,4 +8,5 @@ export type User = {
     email: string;
     level: number;
     xp: number;
+    isFriendRequestSent?: boolean;
 };

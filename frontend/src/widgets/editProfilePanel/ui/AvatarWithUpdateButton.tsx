@@ -2,15 +2,17 @@ import { useRef } from 'react';
 import { CiEdit } from 'react-icons/ci';
 import { Avatar, Box, IconButton, Spinner } from '@chakra-ui/react';
 
-import { useGetCurrentUserDataQuery } from 'shared/api/currentUser';
-import { editUserInfoApi } from 'shared/api/editUserInfo';
+import {
+    useGetCurrentUserDataQuery,
+    useUpdateAvatarMutation,
+} from 'shared/api/currentUser';
 
 export const AvatarWithUpdateButton = () => {
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const { isFetching, data: currentUser } = useGetCurrentUserDataQuery();
 
-    const [uploadAvatar] = editUserInfoApi.useUpdateAvatarMutation();
+    const [uploadAvatar] = useUpdateAvatarMutation();
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];

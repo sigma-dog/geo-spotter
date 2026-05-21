@@ -4,12 +4,24 @@ import {
     NotFoundException,
 } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
-import { PrismaService } from 'src/prisma/prisma.service';
-import { Prisma, User } from 'generated/prisma/client';
+
 import { UpdateUserDto } from './dto/update-user.dto';
 import { S3Service } from '../S3/S3.service';
 import { MAX_AVATAR_IMAGE_SIZE_BYTES } from './users.constants';
 import sharp from 'sharp';
+import { Prisma, User } from '../../generated/prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+
+export type UsersListItem = {
+    id: string;
+    username: string;
+    birthDate: Date;
+    avatarUrl: string | null;
+    email: string;
+    level: number;
+    xp: number;
+    isFriendRequestSent: boolean;
+};
 
 @Injectable()
 export class UsersService {
@@ -43,8 +55,37 @@ export class UsersService {
         });
     }
 
-    async findAll(): Promise<User[]> {
-        return this.prismaService.user.findMany();
+    async findAll(userId: string): Promise<UsersListItem[]> {
+        const users = await this.prismaService.user.findMany({
+            where: {
+                id: {
+                    not: userId,
+                },
+            },
+            select: {
+                id: true,
+                username: true,
+                birthDate: true,
+                avatarUrl: true,
+                email: true,
+                level: true,
+                xp: true,
+                friendshipsReceived: {
+                    where: {
+                        requesterId: userId,
+                        status: 'PENDING',
+                    },
+                    select: {
+                        id: true,
+                    },
+                },
+            },
+        });
+
+        return users.map(({ friendshipsReceived, ...user }) => ({
+            ...user,
+            isFriendRequestSent: friendshipsReceived.length > 0,
+        }));
     }
 
     async update(id: string, updateUserDto: UpdateUserDto): Promise<User> {

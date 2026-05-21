@@ -28,8 +28,8 @@ export class UsersController {
 
     @UseGuards(JwtAuthGuard)
     @Get()
-    findAll() {
-        return this.usersService.findAll();
+    findAll(@CurrentUserId() userId: string) {
+        return this.usersService.findAll(userId);
     }
 
     @Get(':id')
