@@ -10,8 +10,11 @@ import {
     Text,
     VStack,
 } from '@chakra-ui/react';
+import type { FetchBaseQueryError } from '@reduxjs/toolkit/query';
 import maplibregl from 'maplibre-gl';
 
+import { useSubmitGameTaskSelectionMutation } from 'shared/api/game';
+import { toaster } from 'shared/ui/chakra/toaster';
 import { Tooltip } from 'shared/ui/chakra/tooltip';
 
 import { useGameSpotState } from './hooks/useGameSpotState';
@@ -19,6 +22,7 @@ import { useMapillaryViewer } from './hooks/useMapillaryViewer';
 import { useViewerSelectionState } from './hooks/useViewerSelectionState';
 import { MOCK_PANORAMA_SPOTS } from './mocks';
 import { createMarkerElement, setMarkerActiveState } from './utils';
+import type { SelectionPayload } from '../../lib/types';
 import { GameSidebar } from '../GameSidebar';
 import { ViewerSelectionLayer } from '../ViewerSelectionLayer';
 import { ViewerStatusOverlay } from '../ViewerStatusOverlay';
@@ -28,8 +32,50 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 
 const MAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
 
+const loadImageAsBase64 = async (url: string) => {
+    const response = await fetch(url);
+
+    if (!response.ok) {
+        throw new Error(
+            `Failed to load source image: ${response.status} ${response.statusText}`
+        );
+    }
+
+    const blob = await response.blob();
+
+    return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+
+        reader.onloadend = () => {
+            if (typeof reader.result !== 'string') {
+                reject(new Error('Unable to convert source image to base64.'));
+                return;
+            }
+
+            const [, base64Payload] = reader.result.split(',');
+
+            if (!base64Payload) {
+                reject(new Error('Invalid base64 payload for source image.'));
+                return;
+            }
+
+            resolve(base64Payload);
+        };
+
+        reader.onerror = () => {
+            reject(new Error('Unable to read source image blob.'));
+        };
+
+        reader.readAsDataURL(blob);
+    });
+};
+
 export const Map = () => {
     const accessToken = import.meta.env.VITE_MAPILLARY_ACCESS_TOKEN;
+    const [
+        submitGameTaskSelection,
+        { data: selectionResult, isLoading: isSubmittingSelection },
+    ] = useSubmitGameTaskSelectionMutation();
     const {
         activeSpot,
         activeSpotId,
@@ -45,8 +91,12 @@ export const Map = () => {
         new globalThis.Map()
     );
     const customMarkerRef = useRef<maplibregl.Marker | null>(null);
-    const { canDrawSelection, resolvedViewerState, viewerContainerRef } =
-        useMapillaryViewer(accessToken, selectedLocation);
+    const {
+        canDrawSelection,
+        projectSelectionToBasic,
+        resolvedViewerState,
+        viewerContainerRef,
+    } = useMapillaryViewer(accessToken, selectedLocation);
     const {
         draftSelection,
         handleSelectionPointerDown,
@@ -54,6 +104,7 @@ export const Map = () => {
         handleSelectionPointerUp,
         isSelectionMode,
         resetSelection,
+        selectionDraft,
         selectionLayerRef,
         selectionPayload,
         submitSelection,
@@ -62,6 +113,76 @@ export const Map = () => {
         activeSpot,
         canDrawSelection,
         imageId: resolvedViewerState.imageId,
+        imageThumbUrl: resolvedViewerState.imageThumbUrl,
+        onSubmitSelection: async (selectionPayload, selectionDraft) => {
+            void (async () => {
+                console.info(
+                    'Submitting game task selection to backend',
+                    selectionPayload
+                );
+
+                try {
+                    const basicSelection =
+                        await projectSelectionToBasic(selectionDraft);
+                    const payloadWithImage: SelectionPayload = {
+                        ...selectionPayload,
+                        debugInfo: basicSelection.debugInfo,
+                        selection: basicSelection.selection,
+                        sourceImageBase64: selectionPayload.imageThumbUrl
+                            ? await loadImageAsBase64(
+                                  selectionPayload.imageThumbUrl
+                              )
+                            : null,
+                    };
+
+                    const result =
+                        await submitGameTaskSelection(
+                            payloadWithImage
+                        ).unwrap();
+
+                    console.info(
+                        'Game task selection verification result',
+                        result
+                    );
+
+                    toaster.create({
+                        title:
+                            result.verdict === 'match'
+                                ? 'Объект засчитан'
+                                : result.verdict === 'no_match'
+                                  ? 'Объект не подошел'
+                                  : 'Нужна дополнительная проверка',
+                        description: result.reason,
+                        type:
+                            result.verdict === 'match'
+                                ? 'success'
+                                : result.verdict === 'no_match'
+                                  ? 'error'
+                                  : 'info',
+                    });
+                } catch (error) {
+                    console.error(
+                        'Failed to submit game task selection',
+                        error
+                    );
+
+                    const queryError = error as FetchBaseQueryError;
+                    const errorDescription =
+                        'status' in queryError
+                            ? `Backend returned ${String(queryError.status)}.`
+                            : 'Unexpected client-side error.';
+
+                    toaster.create({
+                        title: 'Не удалось отправить выделение',
+                        description:
+                            error instanceof Error
+                                ? error.message
+                                : errorDescription,
+                        type: 'error',
+                    });
+                }
+            })();
+        },
         selectedLocation,
     });
 
@@ -193,7 +314,9 @@ export const Map = () => {
                     onPointerUp={handleSelectionPointerUp}
                 />
                 <ViewerStatusOverlay
-                    selectionPayload={selectionPayload}
+                    isSubmittingSelection={isSubmittingSelection}
+                    selectionDraft={selectionDraft}
+                    selectionResult={selectionResult ?? null}
                     state={resolvedViewerState}
                 />
             </Box>

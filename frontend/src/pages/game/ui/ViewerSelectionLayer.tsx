@@ -27,6 +27,12 @@ export const ViewerSelectionLayer = ({
     onPointerMove,
     onPointerUp,
 }: ViewerSelectionLayerProps) => {
+    const stopPointerPropagation = (
+        event: React.PointerEvent<HTMLButtonElement>
+    ) => {
+        event.stopPropagation();
+    };
+
     return (
         <Box
             ref={selectionLayerRef}
@@ -63,6 +69,8 @@ export const ViewerSelectionLayer = ({
                             // minW="32px"
                             // h="32px"
                             pointerEvents="auto"
+                            onPointerDown={stopPointerPropagation}
+                            onPointerUp={stopPointerPropagation}
                             onClick={onResetSelection}
                         >
                             <LuX />
@@ -79,6 +87,8 @@ export const ViewerSelectionLayer = ({
                             size="sm"
                             colorPalette="red"
                             pointerEvents="auto"
+                            onPointerDown={stopPointerPropagation}
+                            onPointerUp={stopPointerPropagation}
                             onClick={onSubmitSelection}
                         >
                             <LuSend />

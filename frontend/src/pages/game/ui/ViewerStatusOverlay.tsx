@@ -1,15 +1,23 @@
 import { LuCheck, LuSparkles } from 'react-icons/lu';
 import { Box, Heading, HStack, Spinner, Text, VStack } from '@chakra-ui/react';
 
-import type { SelectionPayload, ViewerState } from '../lib/types';
+import type {
+    SelectionPayloadDraft,
+    SelectionVerificationResult,
+    ViewerState,
+} from '../lib/types';
 
 type ViewerStatusOverlayProps = {
-    selectionPayload: SelectionPayload | null;
+    selectionDraft: SelectionPayloadDraft | null;
+    selectionResult: SelectionVerificationResult | null;
+    isSubmittingSelection: boolean;
     state: ViewerState;
 };
 
 export const ViewerStatusOverlay = ({
-    selectionPayload,
+    selectionDraft,
+    selectionResult,
+    isSubmittingSelection,
     state,
 }: ViewerStatusOverlayProps) => {
     if (state.status !== 'ready') {
@@ -45,12 +53,12 @@ export const ViewerStatusOverlay = ({
                     <Text fontWeight="600">Mapillary viewer</Text>
                 </HStack>
                 <Text>{state.message}</Text>
-                {!selectionPayload && (
+                {!selectionDraft && (
                     <Text mt={2} color="red.200" fontSize="sm">
                         Включи режим выделения и обведи объект рамкой.
                     </Text>
                 )}
-                {selectionPayload && (
+                {selectionDraft && (
                     <VStack mt={2} align="stretch" gap={1}>
                         <HStack gap={2} color="red.200">
                             <LuCheck />
@@ -59,14 +67,44 @@ export const ViewerStatusOverlay = ({
                             </Text>
                         </HStack>
                         <Text color="red.200">
-                            {Math.round(
-                                selectionPayload.viewerSelection.pixels.width
-                            )}{' '}
-                            x{' '}
-                            {Math.round(
-                                selectionPayload.viewerSelection.pixels.height
-                            )}{' '}
-                            px
+                            {Math.round(selectionDraft.pixels.width)} x{' '}
+                            {Math.round(selectionDraft.pixels.height)} px
+                        </Text>
+                    </VStack>
+                )}
+                {isSubmittingSelection && (
+                    <HStack mt={3} gap={2} color="yellow.200">
+                        <Spinner size="sm" />
+                        <Text fontSize="sm">
+                            Проверяем выделенный объект на сервере...
+                        </Text>
+                    </HStack>
+                )}
+                {selectionResult && (
+                    <VStack mt={3} align="stretch" gap={1}>
+                        <Text
+                            fontSize="sm"
+                            fontWeight="700"
+                            color={
+                                selectionResult.verdict === 'match'
+                                    ? 'green.200'
+                                    : selectionResult.verdict === 'no_match'
+                                      ? 'red.200'
+                                      : 'yellow.200'
+                            }
+                        >
+                            {selectionResult.verdict === 'match'
+                                ? 'Совпадение подтверждено'
+                                : selectionResult.verdict === 'no_match'
+                                  ? 'Объект не засчитан'
+                                  : 'Нужна дополнительная проверка'}
+                        </Text>
+                        <Text fontSize="sm" color="whiteAlpha.900">
+                            Уверенность:{' '}
+                            {Math.round(selectionResult.confidence * 100)}%
+                        </Text>
+                        <Text fontSize="sm" color="whiteAlpha.800">
+                            {selectionResult.reason}
                         </Text>
                     </VStack>
                 )}

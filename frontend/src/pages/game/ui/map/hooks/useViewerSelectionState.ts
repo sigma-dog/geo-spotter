@@ -6,6 +6,7 @@ import type {
     MockPanoramaSpot,
     SelectionBox,
     SelectionPayload,
+    SelectionPayloadDraft,
     SelectionPoint,
 } from '../../../lib/types';
 import { createSelectionBox } from '../utils';
@@ -14,6 +15,11 @@ interface UseViewerSelectionStateParams {
     activeSpot: MockPanoramaSpot;
     canDrawSelection: boolean;
     imageId: string | null;
+    imageThumbUrl?: string | null;
+    onSubmitSelection?: (
+        selectionPayload: SelectionPayload,
+        selectionDraft: SelectionPayloadDraft
+    ) => void;
     selectedLocation: GameLocation | null;
 }
 
@@ -21,6 +27,8 @@ export const useViewerSelectionState = ({
     activeSpot,
     canDrawSelection,
     imageId,
+    imageThumbUrl,
+    onSubmitSelection,
     selectedLocation,
 }: UseViewerSelectionStateParams) => {
     const [isSelectionMode, setIsSelectionMode] = useState(false);
@@ -31,11 +39,14 @@ export const useViewerSelectionState = ({
     );
     const [selectionPayload, setSelectionPayload] =
         useState<SelectionPayload | null>(null);
+    const [selectionDraft, setSelectionDraft] =
+        useState<SelectionPayloadDraft | null>(null);
     const selectionLayerRef = useRef<HTMLDivElement | null>(null);
 
     const resetSelection = useCallback(() => {
         setSelectionStartPoint(null);
         setDraftSelection(null);
+        setSelectionDraft(null);
         setSelectionPayload(null);
     }, []);
 
@@ -46,6 +57,7 @@ export const useViewerSelectionState = ({
             if (!nextState) {
                 setSelectionStartPoint(null);
                 setDraftSelection(null);
+                setSelectionDraft(null);
                 setSelectionPayload(null);
             }
 
@@ -144,31 +156,51 @@ export const useViewerSelectionState = ({
         setSelectionPayload({
             capturedAt: new Date().toISOString(),
             imageId,
-            spot: {
+            imageThumbUrl,
+            task: {
                 id: activeSpot.id,
                 title: activeSpot.title,
                 target: activeSpot.target,
             },
-            viewerSelection: {
-                pixels: nextSelection,
-                normalized: {
-                    left: nextSelection.left / layer.clientWidth,
-                    top: nextSelection.top / layer.clientHeight,
-                    width: nextSelection.width / layer.clientWidth,
-                    height: nextSelection.height / layer.clientHeight,
-                },
+            selection: {
+                left: nextSelection.left / layer.clientWidth,
+                top: nextSelection.top / layer.clientHeight,
+                width: nextSelection.width / layer.clientWidth,
+                height: nextSelection.height / layer.clientHeight,
             },
             worldLocation: selectedLocation,
+        });
+        setSelectionDraft({
+            layerBounds: {
+                height: layer.getBoundingClientRect().height,
+                left: layer.getBoundingClientRect().left,
+                top: layer.getBoundingClientRect().top,
+                width: layer.getBoundingClientRect().width,
+            },
+            pixels: nextSelection,
+            normalized: {
+                left: nextSelection.left / layer.clientWidth,
+                top: nextSelection.top / layer.clientHeight,
+                width: nextSelection.width / layer.clientWidth,
+                height: nextSelection.height / layer.clientHeight,
+            },
         });
     };
 
     const submitSelection = useCallback(() => {
         if (!selectionPayload) {
+            console.warn('submitSelection skipped: no selectionPayload');
             return;
         }
 
-        console.info('Selected viewer fragment payload', selectionPayload);
-    }, [selectionPayload]);
+        if (!selectionDraft) {
+            console.warn('submitSelection skipped: no selectionDraft');
+            return;
+        }
+
+        console.info('submitSelection triggered', selectionPayload);
+        onSubmitSelection?.(selectionPayload, selectionDraft);
+    }, [onSubmitSelection, selectionDraft, selectionPayload]);
 
     return {
         draftSelection,
@@ -177,6 +209,7 @@ export const useViewerSelectionState = ({
         handleSelectionPointerUp,
         isSelectionMode,
         resetSelection,
+        selectionDraft,
         selectionLayerRef,
         selectionPayload,
         submitSelection,

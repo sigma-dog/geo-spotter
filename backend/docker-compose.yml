@@ -15,6 +15,15 @@ services:
     networks:
       - geo-spotter
 
+  ai-service:
+    container_name: geo-spotter-ai-service
+    build:
+      context: ../services/ai-service
+    ports:
+      - 8000:8000
+    networks:
+      - geo-spotter
+
 volumes:
   postgres_data:
 

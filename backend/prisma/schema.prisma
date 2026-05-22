@@ -22,6 +22,7 @@ model User {
   currentHashedRefreshToken String? @map("current_hashed_refresh_token")
 
   achievements         UserAchievement[]
+  gameTaskAttempts     TaskAttempt[]
   tasksResults         UserTaskResult[]
   friendshipsInitiated Friendship[]      @relation("FriendshipInitiator")
   friendshipsReceived  Friendship[]      @relation("FriendshipReceiver")
@@ -93,6 +94,63 @@ model Task {
   @@map("tasks")
 }
 
+model GameTask {
+  id String @id @default(uuid())
+
+  externalId  String  @unique @map("external_id")
+  title       String
+  description String?
+  target      String
+
+  attempts TaskAttempt[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("game_tasks")
+}
+
+model TaskAttempt {
+  id String @id @default(uuid())
+
+  capturedAt DateTime @map("captured_at")
+
+  imageId           String  @map("image_id")
+  mapillaryImageUrl String? @map("mapillary_image_url")
+
+  selectionLeft   Float @map("selection_left")
+  selectionTop    Float @map("selection_top")
+  selectionWidth  Float @map("selection_width")
+  selectionHeight Float @map("selection_height")
+
+  worldLat Float @map("world_lat")
+  worldLng Float @map("world_lng")
+
+  sourceImageWidth  Int? @map("source_image_width")
+  sourceImageHeight Int? @map("source_image_height")
+  cropWidthPx       Int? @map("crop_width_px")
+  cropHeightPx      Int? @map("crop_height_px")
+
+  status     TaskAttemptStatus
+  verdict    TaskAttemptVerdict?
+  confidence Float?
+  reason     String?
+  source     String?
+
+  user   User   @relation(fields: [userId], references: [id])
+  userId String @map("user_id")
+
+  gameTask   GameTask @relation(fields: [gameTaskId], references: [id])
+  gameTaskId String   @map("game_task_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId, createdAt])
+  @@index([gameTaskId, createdAt])
+  @@map("task_attempts")
+}
+
 model UserTaskResult {
   id String @id @default(uuid())
 
@@ -128,4 +186,20 @@ enum FriendshipStatus {
   BLOCKED
 
   @@map("friendship_status")
+}
+
+enum TaskAttemptStatus {
+  PENDING
+  COMPLETED
+  FAILED
+
+  @@map("task_attempt_status")
+}
+
+enum TaskAttemptVerdict {
+  MATCH
+  NO_MATCH
+  UNCERTAIN
+
+  @@map("task_attempt_verdict")
 }

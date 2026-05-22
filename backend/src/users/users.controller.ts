@@ -29,10 +29,7 @@ export class UsersController {
 
     @UseGuards(JwtAuthGuard)
     @Get()
-    findAll(
-        @CurrentUserId() userId: string,
-        @Query('search') search?: string
-    ) {
+    findAll(@CurrentUserId() userId: string, @Query('search') search?: string) {
         return this.usersService.findAll(userId, search);
     }
 

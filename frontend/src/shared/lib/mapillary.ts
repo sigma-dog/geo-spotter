@@ -12,6 +12,8 @@ interface MapillaryImageItem {
     id: string;
     computed_geometry: MapillaryImageGeometry;
     thumb_1024_url?: string;
+    thumb_2048_url?: string;
+    thumb_original_url?: string;
 }
 
 interface MapillaryImagesResponse {
@@ -39,6 +41,9 @@ const getDistanceScore = (origin: LngLat, image: MapillaryImageItem) => {
     return Math.hypot(origin.lat - imageLat, origin.lng - imageLng);
 };
 
+const resolveBestImageUrl = (image: MapillaryImageItem) =>
+    image.thumb_2048_url ?? image.thumb_original_url ?? image.thumb_1024_url;
+
 export const findNearestMapillaryImage = async (
     location: LngLat,
     accessToken: string
@@ -47,7 +52,7 @@ export const findNearestMapillaryImage = async (
         const params = new URLSearchParams({
             access_token: accessToken,
             bbox: buildBbox(location, delta),
-            fields: 'id,computed_geometry,thumb_1024_url',
+            fields: 'id,computed_geometry,thumb_1024_url,thumb_2048_url,thumb_original_url',
             is_pano: 'true',
             limit: '10',
         });
@@ -64,13 +69,45 @@ export const findNearestMapillaryImage = async (
         const images = payload.data ?? [];
 
         if (images.length > 0) {
-            return images.sort(
+            const nearestImage = images.sort(
                 (left, right) =>
                     getDistanceScore(location, left) -
                     getDistanceScore(location, right)
             )[0];
+
+            return {
+                ...nearestImage,
+                thumb_1024_url:
+                    resolveBestImageUrl(nearestImage) ??
+                    nearestImage.thumb_1024_url,
+            };
         }
     }
 
     return null;
+};
+
+export const getMapillaryImageById = async (
+    imageId: string,
+    accessToken: string
+) => {
+    const params = new URLSearchParams({
+        access_token: accessToken,
+        fields: 'id,computed_geometry,thumb_1024_url,thumb_2048_url,thumb_original_url',
+    });
+
+    const response = await fetch(
+        `https://graph.mapillary.com/${imageId}?${params.toString()}`
+    );
+
+    if (!response.ok) {
+        throw new MapillaryApiError(response.status, response.statusText);
+    }
+
+    const image = (await response.json()) as MapillaryImageItem;
+
+    return {
+        ...image,
+        thumb_1024_url: resolveBestImageUrl(image) ?? image.thumb_1024_url,
+    };
 };
