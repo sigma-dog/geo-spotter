@@ -8,18 +8,19 @@ export type GameLocation = {
     lng: number;
 };
 
-export type MockPanoramaSpot = {
+export type GameTask = {
     id: string;
     title: string;
     description: string;
     target: string;
-    location: GameLocation;
 };
 
 export type ViewerState = {
     imageId: string | null;
     imageThumbUrl: string | null;
     isLoading: boolean;
+    panoramaAddress: string | null;
+    panoramaLocation: GameLocation | null;
     message: string;
     status: 'idle' | 'loading' | 'ready' | 'error';
 };
@@ -72,6 +73,11 @@ export type SelectionPayload = {
         sampleGrid?: {
             columns: number;
             rows: number;
+        };
+        viewportCapture?: {
+            height: number;
+            source: 'viewer-canvas';
+            width: number;
         };
     };
     imageId: string;

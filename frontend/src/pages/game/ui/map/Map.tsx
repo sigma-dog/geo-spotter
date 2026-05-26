@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { LuMap, LuMousePointerClick, LuScanSearch } from 'react-icons/lu';
 import {
     ActionBar,
@@ -13,6 +13,7 @@ import {
 import type { FetchBaseQueryError } from '@reduxjs/toolkit/query';
 import maplibregl from 'maplibre-gl';
 
+import { useGetCurrentUserDataQuery } from 'shared/api/currentUser';
 import { useSubmitGameTaskSelectionMutation } from 'shared/api/game';
 import { toaster } from 'shared/ui/chakra/toaster';
 import { Tooltip } from 'shared/ui/chakra/tooltip';
@@ -20,9 +21,8 @@ import { Tooltip } from 'shared/ui/chakra/tooltip';
 import { useGameSpotState } from './hooks/useGameSpotState';
 import { useMapillaryViewer } from './hooks/useMapillaryViewer';
 import { useViewerSelectionState } from './hooks/useViewerSelectionState';
-import { MOCK_PANORAMA_SPOTS } from './mocks';
-import { createMarkerElement, setMarkerActiveState } from './utils';
-import type { SelectionPayload } from '../../lib/types';
+import { createUserMarkerElement } from './utils';
+import type { GameTask, SelectionPayload } from '../../lib/types';
 import { GameSidebar } from '../GameSidebar';
 import { ViewerSelectionLayer } from '../ViewerSelectionLayer';
 import { ViewerStatusOverlay } from '../ViewerStatusOverlay';
@@ -31,6 +31,22 @@ import 'mapillary-js/dist/mapillary.css';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 const MAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
+const MAPILLARY_TILE_SOURCE_ID = 'mapillary-coverage';
+const MAPILLARY_OVERVIEW_LAYER_ID = 'mapillary-overview-panos';
+const MAPILLARY_SEQUENCE_LAYER_ID = 'mapillary-sequence-panos';
+const MAPILLARY_IMAGE_LAYER_ID = 'mapillary-image-panos';
+const DEFAULT_MAP_CENTER: [number, number] = [12, 24];
+const DEFAULT_MAP_ZOOM = 1.6;
+const MIN_PANORAMA_MARKER_ZOOM = 6;
+const MAPILLARY_TILE_URL =
+    'https://tiles.mapillary.com/maps/vtp/mly1_public/2/{z}/{x}/{y}?access_token=';
+const CURRENT_GAME_TASK: GameTask = {
+    id: 'global-object-hunt',
+    title: 'Свободный поиск по карте',
+    description:
+        'Открой панораму в любой точке мира и выдели объект, который подходит под текущее задание.',
+    target: 'Желтая машина',
+};
 
 const loadImageAsBase64 = async (url: string) => {
     const response = await fetch(url);
@@ -70,33 +86,46 @@ const loadImageAsBase64 = async (url: string) => {
     });
 };
 
+type PanoramaMarkerState = {
+    message: string;
+    status: 'idle' | 'ready' | 'error';
+};
+
 export const Map = () => {
     const accessToken = import.meta.env.VITE_MAPILLARY_ACCESS_TOKEN;
+    const { data: currentUser } = useGetCurrentUserDataQuery();
     const [
         submitGameTaskSelection,
         { data: selectionResult, isLoading: isSubmittingSelection },
     ] = useSubmitGameTaskSelectionMutation();
     const {
-        activeSpot,
-        activeSpotId,
         hasSelectedSpot,
         resetSelectedSpot,
+        selectedImageId,
         selectedLocation,
         selectLocation,
-        selectSpot,
-    } = useGameSpotState(MOCK_PANORAMA_SPOTS);
+        selectScene,
+    } = useGameSpotState();
     const mapContainerRef = useRef<HTMLDivElement | null>(null);
     const mapRef = useRef<maplibregl.Map | null>(null);
-    const spotMarkersRef = useRef<globalThis.Map<string, maplibregl.Marker>>(
-        new globalThis.Map()
-    );
     const customMarkerRef = useRef<maplibregl.Marker | null>(null);
+    const customMarkerLocationRef = useRef<{ lat: number; lng: number } | null>(
+        null
+    );
+    const isMapDraggingRef = useRef(false);
+    const [panoramaMarkerState, setPanoramaMarkerState] =
+        useState<PanoramaMarkerState>({
+            message:
+                'Приблизь карту и кликни по зелёной линии или точке с покрытием Mapillary.',
+            status: 'idle',
+        });
     const {
         canDrawSelection,
+        captureCurrentFrame,
         projectSelectionToBasic,
         resolvedViewerState,
         viewerContainerRef,
-    } = useMapillaryViewer(accessToken, selectedLocation);
+    } = useMapillaryViewer(accessToken, selectedLocation, selectedImageId);
     const {
         draftSelection,
         handleSelectionPointerDown,
@@ -110,7 +139,6 @@ export const Map = () => {
         submitSelection,
         toggleSelectionMode,
     } = useViewerSelectionState({
-        activeSpot,
         canDrawSelection,
         imageId: resolvedViewerState.imageId,
         imageThumbUrl: resolvedViewerState.imageThumbUrl,
@@ -122,18 +150,42 @@ export const Map = () => {
                 );
 
                 try {
-                    const basicSelection =
-                        await projectSelectionToBasic(selectionDraft);
-                    const payloadWithImage: SelectionPayload = {
-                        ...selectionPayload,
-                        debugInfo: basicSelection.debugInfo,
-                        selection: basicSelection.selection,
-                        sourceImageBase64: selectionPayload.imageThumbUrl
-                            ? await loadImageAsBase64(
-                                  selectionPayload.imageThumbUrl
-                              )
-                            : null,
-                    };
+                    let payloadWithImage: SelectionPayload;
+
+                    try {
+                        const viewportCapture = await captureCurrentFrame();
+
+                        payloadWithImage = {
+                            ...selectionPayload,
+                            debugInfo: {
+                                viewportCapture: {
+                                    height: viewportCapture.height,
+                                    source: 'viewer-canvas',
+                                    width: viewportCapture.width,
+                                },
+                            },
+                            sourceImageBase64: viewportCapture.base64,
+                        };
+                    } catch (captureError) {
+                        console.warn(
+                            'Failed to capture current viewport, falling back to pano projection.',
+                            captureError
+                        );
+
+                        const basicSelection =
+                            await projectSelectionToBasic(selectionDraft);
+
+                        payloadWithImage = {
+                            ...selectionPayload,
+                            debugInfo: basicSelection.debugInfo,
+                            selection: basicSelection.selection,
+                            sourceImageBase64: selectionPayload.imageThumbUrl
+                                ? await loadImageAsBase64(
+                                      selectionPayload.imageThumbUrl
+                                  )
+                                : null,
+                        };
+                    }
 
                     const result =
                         await submitGameTaskSelection(
@@ -184,7 +236,107 @@ export const Map = () => {
             })();
         },
         selectedLocation,
+        task: CURRENT_GAME_TASK,
     });
+
+    const updateSelectedMarker = useCallback(
+        (location: { lat: number; lng: number }) => {
+            const map = mapRef.current;
+
+            if (!map) {
+                return;
+            }
+
+            const markerElement = createUserMarkerElement(
+                currentUser?.avatarUrl,
+                currentUser?.username?.charAt(0).toUpperCase() ?? 'U'
+            );
+
+            customMarkerRef.current?.remove();
+            customMarkerRef.current = new maplibregl.Marker({
+                element: markerElement,
+                anchor: 'bottom',
+            })
+                .setLngLat([location.lng, location.lat])
+                .addTo(map);
+            customMarkerLocationRef.current = location;
+        },
+        [currentUser?.avatarUrl, currentUser?.username]
+    );
+
+    useEffect(() => {
+        if (!customMarkerLocationRef.current) {
+            return;
+        }
+        updateSelectedMarker(customMarkerLocationRef.current);
+    }, [currentUser?.avatarUrl, currentUser?.username, updateSelectedMarker]);
+
+    const focusMapOnLocation = useCallback(
+        (
+            location: { lat: number; lng: number },
+            options?: {
+                duration?: number;
+                zoom?: number;
+            }
+        ) => {
+            const map = mapRef.current;
+
+            if (!map) {
+                return;
+            }
+
+            map.easeTo({
+                center: [location.lng, location.lat],
+                duration: options?.duration ?? 300,
+                zoom:
+                    options?.zoom ??
+                    (hasSelectedSpot
+                        ? Math.max(map.getZoom(), 14)
+                        : map.getZoom()),
+            });
+        },
+        [hasSelectedSpot]
+    );
+
+    const updateCoverageHint = useCallback(() => {
+        const map = mapRef.current;
+
+        if (!accessToken) {
+            setPanoramaMarkerState({
+                message:
+                    'Добавь `VITE_MAPILLARY_ACCESS_TOKEN`, чтобы загрузить покрытие Mapillary.',
+                status: 'error',
+            });
+            return;
+        }
+
+        if (!map) {
+            return;
+        }
+
+        if (map.getZoom() < MIN_PANORAMA_MARKER_ZOOM) {
+            setPanoramaMarkerState({
+                message: `Приблизь карту до zoom ${MIN_PANORAMA_MARKER_ZOOM}, чтобы появились кликабельные линии покрытия.`,
+                status: 'idle',
+            });
+            return;
+        }
+
+        if (map.getZoom() < 14) {
+            setPanoramaMarkerState({
+                message:
+                    'Кликни по зелёной линии Mapillary, чтобы открыть репрезентативную панораму этого трека.',
+                status: 'ready',
+            });
+            return;
+        }
+
+        setPanoramaMarkerState({
+            message:
+                'На этом зуме доступны точные pano-точки. Кликни по зелёной точке или линии.',
+            status: 'ready',
+        });
+    }, [accessToken]);
 
     useEffect(() => {
         if (!mapContainerRef.current || mapRef.current) {
@@ -193,32 +345,168 @@ export const Map = () => {
 
         const map = new maplibregl.Map({
             container: mapContainerRef.current,
-            center: [
-                MOCK_PANORAMA_SPOTS[0].location.lng,
-                MOCK_PANORAMA_SPOTS[0].location.lat,
-            ],
-            zoom: 13,
+            center: DEFAULT_MAP_CENTER,
+            zoom: DEFAULT_MAP_ZOOM,
             style: MAP_STYLE_URL,
         });
 
         map.addControl(new maplibregl.NavigationControl(), 'top-right');
 
-        MOCK_PANORAMA_SPOTS.forEach((spot, index) => {
-            const markerElement = createMarkerElement(String(index + 1));
+        const handleCoverageClick = (
+            event: maplibregl.MapMouseEvent & {
+                features?: maplibregl.MapGeoJSONFeature[];
+            }
+        ) => {
+            if (isMapDraggingRef.current) {
+                return;
+            }
 
-            markerElement.onclick = () => {
-                resetSelection();
-                selectSpot(spot);
-            };
+            const feature = event.features?.[0];
 
-            const marker = new maplibregl.Marker({ element: markerElement })
-                .setLngLat([spot.location.lng, spot.location.lat])
-                .addTo(map);
+            if (!feature) {
+                return;
+            }
 
-            spotMarkersRef.current.set(spot.id, marker);
+            const layerId = feature.layer.id;
+            const imageIdValue =
+                layerId === MAPILLARY_SEQUENCE_LAYER_ID
+                    ? feature.properties?.image_id
+                    : (feature.properties?.image_id ?? feature.properties?.id);
+            const imageId = imageIdValue ? String(imageIdValue) : null;
+
+            const geometryCoordinates =
+                feature.geometry.type === 'Point' &&
+                Array.isArray(feature.geometry.coordinates) &&
+                feature.geometry.coordinates.length >= 2
+                    ? feature.geometry.coordinates
+                    : null;
+            const clickedLocation = geometryCoordinates
+                ? {
+                      lat: Number(geometryCoordinates[1]),
+                      lng: Number(geometryCoordinates[0]),
+                  }
+                : {
+                      lat: event.lngLat.lat,
+                      lng: event.lngLat.lng,
+                  };
+
+            resetSelection();
+            if (imageId) {
+                selectScene(clickedLocation, imageId);
+            } else {
+                selectLocation(clickedLocation);
+            }
+            updateSelectedMarker(clickedLocation);
+            focusMapOnLocation(clickedLocation, {
+                duration: 220,
+                zoom: Math.max(map.getZoom(), 14),
+            });
+        };
+
+        const registerInteractiveLayer = (layerId: string) => {
+            map.on('click', layerId, handleCoverageClick);
+            map.on('mouseenter', layerId, () => {
+                map.getCanvas().style.cursor = 'pointer';
+            });
+            map.on('mouseleave', layerId, () => {
+                map.getCanvas().style.cursor = '';
+            });
+        };
+
+        map.on('load', () => {
+            if (!accessToken) {
+                updateCoverageHint();
+                return;
+            }
+
+            map.addSource(MAPILLARY_TILE_SOURCE_ID, {
+                type: 'vector',
+                tiles: [`${MAPILLARY_TILE_URL}${accessToken}`],
+                minzoom: 0,
+                maxzoom: 14,
+            });
+
+            map.addLayer({
+                id: MAPILLARY_OVERVIEW_LAYER_ID,
+                type: 'circle',
+                source: MAPILLARY_TILE_SOURCE_ID,
+                'source-layer': 'overview',
+                minzoom: 0,
+                maxzoom: 6,
+                filter: ['==', ['get', 'is_pano'], true],
+                paint: {
+                    'circle-radius': 3,
+                    'circle-color': '#22c55e',
+                    'circle-stroke-width': 1,
+                    'circle-stroke-color': '#f8fafc',
+                    'circle-opacity': 0.9,
+                },
+            });
+
+            map.addLayer({
+                id: MAPILLARY_SEQUENCE_LAYER_ID,
+                type: 'line',
+                source: MAPILLARY_TILE_SOURCE_ID,
+                'source-layer': 'sequence',
+                minzoom: 6,
+                maxzoom: 14,
+                filter: ['==', ['get', 'is_pano'], true],
+                layout: {
+                    'line-cap': 'round',
+                    'line-join': 'round',
+                },
+                paint: {
+                    'line-color': '#16a34a',
+                    'line-width': [
+                        'interpolate',
+                        ['linear'],
+                        ['zoom'],
+                        6,
+                        2,
+                        14,
+                        5,
+                    ],
+                    'line-opacity': 0.85,
+                },
+            });
+
+            map.addLayer({
+                id: MAPILLARY_IMAGE_LAYER_ID,
+                type: 'circle',
+                source: MAPILLARY_TILE_SOURCE_ID,
+                'source-layer': 'image',
+                minzoom: 14,
+                filter: ['==', ['get', 'is_pano'], true],
+                paint: {
+                    'circle-radius': 4,
+                    'circle-color': '#22c55e',
+                    'circle-stroke-width': 1.5,
+                    'circle-stroke-color': '#f8fafc',
+                    'circle-opacity': 0.95,
+                },
+            });
+
+            registerInteractiveLayer(MAPILLARY_OVERVIEW_LAYER_ID);
+            registerInteractiveLayer(MAPILLARY_SEQUENCE_LAYER_ID);
+            registerInteractiveLayer(MAPILLARY_IMAGE_LAYER_ID);
+            updateCoverageHint();
+        });
+
+        map.on('dragstart', () => {
+            isMapDraggingRef.current = true;
+        });
+
+        map.on('dragend', () => {
+            window.setTimeout(() => {
+                isMapDraggingRef.current = false;
+            }, 0);
         });
 
         map.on('click', (event) => {
+            if (isMapDraggingRef.current) {
+                return;
+            }
+
             const clickedLocation = {
                 lat: event.lngLat.lat,
                 lng: event.lngLat.lng,
@@ -226,54 +514,70 @@ export const Map = () => {
 
             resetSelection();
             selectLocation(clickedLocation);
+            updateSelectedMarker(clickedLocation);
+            focusMapOnLocation(clickedLocation, {
+                duration: 220,
+                zoom: Math.max(map.getZoom(), 14),
+            });
+        });
 
-            if (customMarkerRef.current) {
-                customMarkerRef.current.setLngLat([
-                    clickedLocation.lng,
-                    clickedLocation.lat,
-                ]);
-            } else {
-                const markerElement = createMarkerElement('X');
-                markerElement.style.background = '#e53e3e';
-                markerElement.style.color = '#ffffff';
-
-                customMarkerRef.current = new maplibregl.Marker({
-                    element: markerElement,
-                })
-                    .setLngLat([clickedLocation.lng, clickedLocation.lat])
-                    .addTo(map);
-            }
+        map.on('moveend', () => {
+            updateCoverageHint();
         });
 
         mapRef.current = map;
+        window.setTimeout(() => {
+            updateCoverageHint();
+        }, 0);
 
         return () => {
             customMarkerRef.current?.remove();
-            spotMarkersRef.current.forEach((marker) => marker.remove());
-            spotMarkersRef.current.clear();
             map.remove();
             mapRef.current = null;
         };
-    }, [resetSelection, selectLocation, selectSpot]);
+    }, [
+        focusMapOnLocation,
+        resetSelection,
+        selectLocation,
+        selectScene,
+        updateCoverageHint,
+        updateSelectedMarker,
+        accessToken,
+    ]);
 
     useEffect(() => {
-        spotMarkersRef.current.forEach((marker, spotId) => {
-            const markerElement = marker.getElement();
-            setMarkerActiveState(markerElement, spotId === activeSpotId);
-        });
-    }, [activeSpotId]);
+        if (!selectedLocation) {
+            return;
+        }
 
-    useEffect(() => {
         if (!mapContainerRef.current || !mapRef.current || !selectedLocation) {
             return;
         }
 
-        mapRef.current.flyTo({
-            center: [selectedLocation.lng, selectedLocation.lat],
+        focusMapOnLocation(selectedLocation, {
+            duration: 300,
             zoom: 14,
-            duration: 1200,
         });
-    }, [selectedLocation]);
+    }, [focusMapOnLocation, selectedLocation]);
+
+    useEffect(() => {
+        if (!customMarkerRef.current || !resolvedViewerState.panoramaLocation) {
+            return;
+        }
+
+        updateSelectedMarker(resolvedViewerState.panoramaLocation);
+    }, [resolvedViewerState.panoramaLocation, updateSelectedMarker]);
+
+    useEffect(() => {
+        if (!mapRef.current || !resolvedViewerState.panoramaLocation) {
+            return;
+        }
+
+        focusMapOnLocation(resolvedViewerState.panoramaLocation, {
+            duration: 350,
+            zoom: Math.max(mapRef.current.getZoom(), 14),
+        });
+    }, [focusMapOnLocation, resolvedViewerState.panoramaLocation]);
 
     useEffect(() => {
         if (!mapRef.current) {
@@ -281,13 +585,38 @@ export const Map = () => {
         }
 
         const timeoutId = window.setTimeout(() => {
-            mapRef.current?.resize();
+            const map = mapRef.current;
+
+            if (!map) {
+                return;
+            }
+
+            map.resize();
+
+            const focusLocation =
+                resolvedViewerState.panoramaLocation ?? selectedLocation;
+
+            if (!focusLocation) {
+                return;
+            }
+
+            focusMapOnLocation(focusLocation, {
+                duration: 300,
+                zoom: hasSelectedSpot
+                    ? Math.max(map.getZoom(), 14)
+                    : map.getZoom(),
+            });
         }, 50);
 
         return () => {
             window.clearTimeout(timeoutId);
         };
-    }, [hasSelectedSpot]);
+    }, [
+        focusMapOnLocation,
+        hasSelectedSpot,
+        resolvedViewerState.panoramaLocation,
+        selectedLocation,
+    ]);
 
     return (
         <Box position="relative" flex={1} minH="100vh" bg="gray.950">
@@ -339,6 +668,38 @@ export const Map = () => {
                 transition="all 0.35s ease"
             >
                 <Box ref={mapContainerRef} h="full" w="full" />
+                {!hasSelectedSpot && (
+                    <Box
+                        position="absolute"
+                        right={3}
+                        bottom={3}
+                        zIndex={2}
+                        maxW="360px"
+                        px={3}
+                        py={2.5}
+                        borderRadius="xl"
+                        bg="#171923"
+                        color="white"
+                        borderWidth="1px"
+                        borderColor="whiteAlpha.200"
+                        boxShadow="lg"
+                    >
+                        <Text fontWeight="700" fontSize="sm">
+                            Точки панорам
+                        </Text>
+                        <Text
+                            mt={1}
+                            fontSize="sm"
+                            color={
+                                panoramaMarkerState.status === 'error'
+                                    ? 'red.200'
+                                    : 'whiteAlpha.900'
+                            }
+                        >
+                            {panoramaMarkerState.message}
+                        </Text>
+                    </Box>
+                )}
                 {hasSelectedSpot && (
                     <IconButton
                         aria-label="Открыть карту на весь экран"
@@ -368,16 +729,9 @@ export const Map = () => {
             >
                 <GameSidebar
                     hasSelectedSpot={hasSelectedSpot}
-                    activeSpotDescription={activeSpot.description}
-                    activeSpotId={activeSpotId ?? ''}
-                    activeSpotTarget={activeSpot.target}
-                    spots={MOCK_PANORAMA_SPOTS}
-                    onSelectSpot={(spot) => {
-                        resetSelection();
-                        selectSpot(spot);
-                    }}
                     isViewerLoading={resolvedViewerState.isLoading}
-                    spotTitle={activeSpot.title}
+                    panoramaAddress={resolvedViewerState.panoramaAddress}
+                    task={CURRENT_GAME_TASK}
                 />
             </Box>
 

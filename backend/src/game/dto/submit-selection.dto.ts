@@ -101,6 +101,17 @@ class DebugSampleGridDto {
     rows: number;
 }
 
+class DebugViewportCaptureDto {
+    @IsNumber()
+    width: number;
+
+    @IsNumber()
+    height: number;
+
+    @IsString()
+    source: 'viewer-canvas';
+}
+
 class DebugSelectionBoxDto {
     @IsNumber()
     left: number;
@@ -165,6 +176,11 @@ class DebugInfoDto {
     @ValidateNested()
     @Type(() => DebugSampleGridDto)
     sampleGrid?: DebugSampleGridDto;
+
+    @IsOptional()
+    @ValidateNested()
+    @Type(() => DebugViewportCaptureDto)
+    viewportCapture?: DebugViewportCaptureDto;
 }
 
 export class SubmitSelectionDto {

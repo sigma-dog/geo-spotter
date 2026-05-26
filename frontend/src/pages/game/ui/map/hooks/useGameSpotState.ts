@@ -1,38 +1,36 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 
-import type { GameLocation, MockPanoramaSpot } from '../../../lib/types';
+import type { GameLocation } from '../../../lib/types';
 
-export const useGameSpotState = (spots: MockPanoramaSpot[]) => {
-    const [activeSpotId, setActiveSpotId] = useState<string | null>(null);
+export const useGameSpotState = () => {
     const [selectedLocation, setSelectedLocation] =
         useState<GameLocation | null>(null);
-
-    const activeSpot = useMemo(
-        () => spots.find((spot) => spot.id === activeSpotId) ?? spots[0],
-        [activeSpotId, spots]
-    );
-
-    const selectSpot = useCallback((spot: MockPanoramaSpot) => {
-        setActiveSpotId(spot.id);
-        setSelectedLocation(spot.location);
-    }, []);
+    const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
 
     const selectLocation = useCallback((location: GameLocation) => {
         setSelectedLocation(location);
+        setSelectedImageId(null);
     }, []);
 
+    const selectScene = useCallback(
+        (location: GameLocation, imageId: string) => {
+            setSelectedLocation(location);
+            setSelectedImageId(imageId);
+        },
+        []
+    );
+
     const resetSelectedSpot = useCallback(() => {
-        setActiveSpotId(null);
         setSelectedLocation(null);
+        setSelectedImageId(null);
     }, []);
 
     return {
-        activeSpot,
-        activeSpotId,
-        hasSelectedSpot: !!selectedLocation,
+        hasSelectedSpot: !!selectedLocation || !!selectedImageId,
         resetSelectedSpot,
+        selectedImageId,
         selectedLocation,
         selectLocation,
-        selectSpot,
+        selectScene,
     };
 };

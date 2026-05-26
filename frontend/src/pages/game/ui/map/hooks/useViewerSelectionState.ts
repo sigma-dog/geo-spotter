@@ -3,7 +3,7 @@ import { useCallback, useRef, useState } from 'react';
 
 import type {
     GameLocation,
-    MockPanoramaSpot,
+    GameTask,
     SelectionBox,
     SelectionPayload,
     SelectionPayloadDraft,
@@ -12,7 +12,6 @@ import type {
 import { createSelectionBox } from '../utils';
 
 interface UseViewerSelectionStateParams {
-    activeSpot: MockPanoramaSpot;
     canDrawSelection: boolean;
     imageId: string | null;
     imageThumbUrl?: string | null;
@@ -21,15 +20,16 @@ interface UseViewerSelectionStateParams {
         selectionDraft: SelectionPayloadDraft
     ) => void;
     selectedLocation: GameLocation | null;
+    task: GameTask;
 }
 
 export const useViewerSelectionState = ({
-    activeSpot,
     canDrawSelection,
     imageId,
     imageThumbUrl,
     onSubmitSelection,
     selectedLocation,
+    task,
 }: UseViewerSelectionStateParams) => {
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const [selectionStartPoint, setSelectionStartPoint] =
@@ -158,9 +158,9 @@ export const useViewerSelectionState = ({
             imageId,
             imageThumbUrl,
             task: {
-                id: activeSpot.id,
-                title: activeSpot.title,
-                target: activeSpot.target,
+                id: task.id,
+                title: task.title,
+                target: task.target,
             },
             selection: {
                 left: nextSelection.left / layer.clientWidth,
