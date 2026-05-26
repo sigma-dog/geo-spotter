@@ -19,8 +19,9 @@ interface UseViewerSelectionStateParams {
         selectionPayload: SelectionPayload,
         selectionDraft: SelectionPayloadDraft
     ) => void;
+    sessionId: string | null;
     selectedLocation: GameLocation | null;
-    task: GameTask;
+    task: GameTask | null;
 }
 
 export const useViewerSelectionState = ({
@@ -28,6 +29,7 @@ export const useViewerSelectionState = ({
     imageId,
     imageThumbUrl,
     onSubmitSelection,
+    sessionId,
     selectedLocation,
     task,
 }: UseViewerSelectionStateParams) => {
@@ -126,7 +128,13 @@ export const useViewerSelectionState = ({
     const handleSelectionPointerUp = (
         event: React.PointerEvent<HTMLDivElement>
     ) => {
-        if (!selectionStartPoint || !imageId || !selectedLocation) {
+        if (
+            !selectionStartPoint ||
+            !imageId ||
+            !selectedLocation ||
+            !task ||
+            !sessionId
+        ) {
             return;
         }
 
@@ -157,6 +165,8 @@ export const useViewerSelectionState = ({
             capturedAt: new Date().toISOString(),
             imageId,
             imageThumbUrl,
+            sessionId,
+            sessionTaskId: task.id,
             task: {
                 id: task.id,
                 title: task.title,

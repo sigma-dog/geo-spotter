@@ -11,8 +11,23 @@ export type GameLocation = {
 export type GameTask = {
     id: string;
     title: string;
-    description: string;
+    description: string | null;
     target: string;
+    orderIndex?: number;
+    status?: 'PENDING' | 'COMPLETED';
+    completedAt?: string | null;
+};
+
+export type GameSession = {
+    id: string;
+    mode: 'SOLO' | 'MULTIPLAYER';
+    status: 'ACTIVE' | 'COMPLETED' | 'ABANDONED';
+    startedAt: string;
+    finishedAt: string | null;
+    completedTasksCount: number;
+    totalTasksCount: number;
+    attemptsCount: number;
+    tasks: GameTask[];
 };
 
 export type ViewerState = {
@@ -33,6 +48,8 @@ export type SelectionBox = {
 };
 
 export type SelectionPayload = {
+    sessionId: string;
+    sessionTaskId: string;
     capturedAt: string;
     debugInfo?: {
         basicCorners?: Array<{
@@ -114,6 +131,8 @@ export type SelectionVerificationResult = {
     attemptId: string;
     confidence: number;
     reason: string;
+    sessionCompleted?: boolean;
     source: 'mock' | 'ai';
+    taskCompleted?: boolean;
     verdict: SelectionVerificationVerdict;
 };

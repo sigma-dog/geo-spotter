@@ -26,10 +26,14 @@ Optional environment variables:
 - `YOLO_MODEL_NAME`
 - `YOLO_CONFIDENCE`
 - `YOLO_IMAGE_SIZE`
+- `VLM_MAX_IMAGE_SIDE_PX`
+- `VLM_JPEG_QUALITY`
+- `VLM_INCLUDE_ORIGINAL_CROP`
 
 The current verifier uses:
 
 - YOLO detection for object class matching
-- simple HSV-based color analysis on the best matching detection box
+- optional visible-attribute verification in VLM only when the raw task target explicitly contains those attributes
+- resized/compressed VLM image payloads for smaller local context windows
 
 This is a practical MVP for tasks like `Желтая машина`, `Красный автобус`, `Велосипед`.

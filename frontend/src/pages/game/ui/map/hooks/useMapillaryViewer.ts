@@ -190,7 +190,7 @@ export const useMapillaryViewer = (
             component: {
                 bearing: false,
                 cover: false,
-                direction: false,
+                direction: {},
                 keyboard: false,
                 sequence: false,
                 slider: false,
@@ -238,8 +238,11 @@ export const useMapillaryViewer = (
                     ...currentState,
                     imageId: currentImage.id,
                     imageThumbUrl: imageDetails.thumb_1024_url ?? null,
+                    isLoading: false,
                     panoramaAddress: null,
                     panoramaLocation: getPanoramaLocation(imageDetails),
+                    message: `Открыт кадр Mapillary: ${currentImage.id}`,
+                    status: 'ready',
                 }));
             } catch (error) {
                 if (!isActive) {
@@ -449,7 +452,8 @@ export const useMapillaryViewer = (
                     if (
                         currentState.panoramaLocation?.lat !==
                             currentLocation.lat ||
-                        currentState.panoramaLocation?.lng !== currentLocation.lng
+                        currentState.panoramaLocation?.lng !==
+                            currentLocation.lng
                     ) {
                         return currentState;
                     }
@@ -470,7 +474,8 @@ export const useMapillaryViewer = (
                     if (
                         currentState.panoramaLocation?.lat !==
                             currentLocation.lat ||
-                        currentState.panoramaLocation?.lng !== currentLocation.lng
+                        currentState.panoramaLocation?.lng !==
+                            currentLocation.lng
                     ) {
                         return currentState;
                     }

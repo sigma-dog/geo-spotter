@@ -15,6 +15,11 @@ DEFAULT_OPENAI_MODEL = os.getenv('OPENAI_VLM_MODEL', 'gpt-4.1-mini')
 DEFAULT_OPENAI_BASE_URL = os.getenv('OPENAI_BASE_URL')
 DEFAULT_LM_STUDIO_BASE_URL = os.getenv('LM_STUDIO_BASE_URL', 'http://127.0.0.1:1234/v1')
 DEFAULT_LM_STUDIO_MODEL = os.getenv('LM_STUDIO_MODEL', 'local-model')
+DEFAULT_VLM_MAX_IMAGE_SIDE_PX = int(os.getenv('VLM_MAX_IMAGE_SIDE_PX', '256'))
+DEFAULT_VLM_JPEG_QUALITY = int(os.getenv('VLM_JPEG_QUALITY', '70'))
+DEFAULT_VLM_INCLUDE_ORIGINAL_CROP = (
+    os.getenv('VLM_INCLUDE_ORIGINAL_CROP', 'false').lower() == 'true'
+)
 
 
 class BaseVlmVerifier:
@@ -44,7 +49,14 @@ class MockVlmVerifier(BaseVlmVerifier):
 
 
 class OpenAIVlmVerifier(BaseVlmVerifier):
-    def __init__(self, *, api_key: str, model: str, base_url: str | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str,
+        base_url: str | None = None,
+        include_original_crop: bool = False,
+    ) -> None:
         from openai import OpenAI
 
         client_kwargs: dict[str, str] = {
@@ -55,36 +67,53 @@ class OpenAIVlmVerifier(BaseVlmVerifier):
 
         self._client = OpenAI(**client_kwargs)
         self._model = model
+        self._include_original_crop = include_original_crop
 
     def verify(
         self,
         target: TargetSpec,
         segmentation: SegmentationResult,
     ) -> VlmVerificationResult:
+        attribute_instruction = (
+            'Check that the segmented object matches the target object class '
+            f'and these visible attributes: {", ".join(target.visible_attributes)}.\n'
+            'Reject only if one of these listed visible attributes clearly does not match.\n'
+        )
+
+        if not target.visible_attributes:
+            attribute_instruction = (
+                'Check only whether the segmented object matches the target object class.\n'
+                'Do not require any specific color or extra attribute unless it is explicitly present in the raw task target.\n'
+            )
+
         prompt = (
-            'You verify whether a segmented object matches a game target.\n'
+            'Verify whether the segmented object matches the game target.\n'
             f'Target object class: {target.class_name}\n'
             f'Raw task target: {target.raw_target}\n'
-            'You will receive two images:\n'
-            '1. The original selected crop.\n'
-            '2. The segmented object crop with background removed.\n'
-            'Decide whether the segmented object matches the target, including color and other visible attributes.\n'
-            'Respond with JSON only in this shape:\n'
+            f'Visible attributes from the task: {", ".join(target.visible_attributes) if target.visible_attributes else "none"}\n'
+            'You will receive the segmented object crop with background removed.\n'
+            f'{attribute_instruction}'
+            'If the image is grayscale or low quality, do not reject unless an explicit required attribute clearly mismatches.\n'
+            'Return JSON only:\n'
             '{"matched": true|false|null, "confidence": 0.0, "reason": "short explanation"}'
         )
 
-        original_image = _encode_array_as_data_url(segmentation.original_crop)
         masked_image = _encode_array_as_data_url(segmentation.masked_crop)
+        content: list[dict[str, str]] = [
+            {'type': 'input_text', 'text': prompt},
+            {'type': 'input_image', 'image_url': masked_image},
+        ]
+
+        if self._include_original_crop:
+            original_image = _encode_array_as_data_url(segmentation.original_crop)
+            content.append({'type': 'input_image', 'image_url': original_image})
+
         response = self._client.responses.create(
             model=self._model,
             input=[
                 {
                     'role': 'user',
-                    'content': [
-                        {'type': 'input_text', 'text': prompt},
-                        {'type': 'input_image', 'image_url': original_image},
-                        {'type': 'input_image', 'image_url': masked_image},
-                    ],
+                    'content': content,
                 }
             ],
         )
@@ -112,6 +141,7 @@ def get_vlm_verifier() -> BaseVlmVerifier:
                 api_key=api_key,
                 model=DEFAULT_OPENAI_MODEL,
                 base_url=DEFAULT_OPENAI_BASE_URL,
+                include_original_crop=True,
             )
         except Exception:
             return MockVlmVerifier()
@@ -122,6 +152,7 @@ def get_vlm_verifier() -> BaseVlmVerifier:
                 api_key='lm-studio',
                 model=DEFAULT_LM_STUDIO_MODEL,
                 base_url=DEFAULT_LM_STUDIO_BASE_URL,
+                include_original_crop=DEFAULT_VLM_INCLUDE_ORIGINAL_CROP,
             )
         except Exception:
             return MockVlmVerifier()
@@ -131,11 +162,23 @@ def get_vlm_verifier() -> BaseVlmVerifier:
 
 def _encode_array_as_data_url(image_array: np.ndarray) -> str:
     image = Image.fromarray(image_array.astype(np.uint8), mode='RGB')
+
+    if max(image.size) > DEFAULT_VLM_MAX_IMAGE_SIDE_PX:
+        image.thumbnail(
+            (DEFAULT_VLM_MAX_IMAGE_SIDE_PX, DEFAULT_VLM_MAX_IMAGE_SIDE_PX),
+            Image.Resampling.LANCZOS,
+        )
+
     buffer = io.BytesIO()
-    image.save(buffer, format='PNG')
+    image.save(
+        buffer,
+        format='JPEG',
+        optimize=True,
+        quality=DEFAULT_VLM_JPEG_QUALITY,
+    )
     encoded = base64.b64encode(buffer.getvalue()).decode('utf-8')
 
-    return f'data:image/png;base64,{encoded}'
+    return f'data:image/jpeg;base64,{encoded}'
 
 
 def _parse_vlm_json_response(output_text: str) -> dict[str, object]:

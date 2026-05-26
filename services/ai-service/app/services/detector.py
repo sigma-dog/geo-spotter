@@ -35,6 +35,17 @@ TARGET_CLASS_PATTERNS: tuple[tuple[TargetClass, tuple[str, ...]], ...] = (
     ('car', ('машин', 'авто', 'car', 'vehicle')),
 )
 
+COLOR_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ('yellow', ('желт', 'yellow')),
+    ('red', ('красн', 'red')),
+    ('blue', ('син', 'blue')),
+    ('green', ('зелен', 'green')),
+    ('black', ('черн', 'black')),
+    ('white', ('бел', 'white')),
+    ('gray', ('сер', 'grey', 'gray')),
+    ('orange', ('оранж', 'orange')),
+)
+
 
 @lru_cache(maxsize=1)
 def get_detection_model() -> YOLO:
@@ -43,12 +54,27 @@ def get_detection_model() -> YOLO:
 
 def infer_target_spec(target: str) -> TargetSpec | None:
     normalized_target = target.lower()
+    visible_attributes = _extract_visible_attributes(normalized_target)
 
     for class_name, patterns in TARGET_CLASS_PATTERNS:
         if any(pattern in normalized_target for pattern in patterns):
-            return TargetSpec(class_name=class_name, raw_target=target)
+            return TargetSpec(
+                class_name=class_name,
+                raw_target=target,
+                visible_attributes=visible_attributes,
+            )
 
     return None
+
+
+def _extract_visible_attributes(target: str) -> tuple[str, ...]:
+    attributes: list[str] = []
+
+    for normalized_name, patterns in COLOR_PATTERNS:
+        if any(pattern in target for pattern in patterns):
+            attributes.append(normalized_name)
+
+    return tuple(attributes)
 
 
 def detect_target_object(

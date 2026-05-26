@@ -7,6 +7,8 @@ export type VerificationResponse = {
     reason: string;
     source: 'mock' | 'ai';
     verdict: VerificationVerdict;
+    sessionCompleted?: boolean;
+    taskCompleted?: boolean;
 };
 
 export type PreparedSelectionAsset = {
@@ -41,3 +43,25 @@ export type AiVerificationRequest = {
 };
 
 export type AiVerificationResponse = Omit<VerificationResponse, 'attemptId'>;
+
+export type GameSessionTaskView = {
+    id: string;
+    title: string;
+    description: string | null;
+    target: string;
+    orderIndex: number;
+    status: 'PENDING' | 'COMPLETED';
+    completedAt: string | null;
+};
+
+export type GameSessionView = {
+    id: string;
+    mode: 'SOLO' | 'MULTIPLAYER';
+    status: 'ACTIVE' | 'COMPLETED' | 'ABANDONED';
+    startedAt: string;
+    finishedAt: string | null;
+    completedTasksCount: number;
+    totalTasksCount: number;
+    attemptsCount: number;
+    tasks: GameSessionTaskView[];
+};

@@ -1,14 +1,25 @@
 import type React from 'react';
 import { LuSend, LuX } from 'react-icons/lu';
-import { Box, Button } from '@chakra-ui/react';
+import {
+    Box,
+    Button,
+    createListCollection,
+    Portal,
+    Select,
+    Text,
+    VStack,
+} from '@chakra-ui/react';
 
-import type { SelectionBox, SelectionPayload } from '../lib/types';
+import type { GameTask, SelectionBox, SelectionPayload } from '../lib/types';
 
 type ViewerSelectionLayerProps = {
     draftSelection: SelectionBox | null;
     isInteractive: boolean;
+    selectedTaskId: string | null;
     selectionPayload: SelectionPayload | null;
     selectionLayerRef: React.RefObject<HTMLDivElement | null>;
+    taskOptions: GameTask[];
+    onChangeTask: (taskId: string) => void;
     onResetSelection: () => void;
     onSubmitSelection: () => void;
     onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
@@ -19,19 +30,26 @@ type ViewerSelectionLayerProps = {
 export const ViewerSelectionLayer = ({
     draftSelection,
     isInteractive,
+    selectedTaskId,
     selectionPayload,
     selectionLayerRef,
+    taskOptions,
+    onChangeTask,
     onResetSelection,
     onSubmitSelection,
     onPointerDown,
     onPointerMove,
     onPointerUp,
 }: ViewerSelectionLayerProps) => {
-    const stopPointerPropagation = (
-        event: React.PointerEvent<HTMLButtonElement>
-    ) => {
+    const stopPointerPropagation = (event: React.PointerEvent<HTMLElement>) => {
         event.stopPropagation();
     };
+    const taskCollection = createListCollection({
+        items: taskOptions.map((task) => ({
+            label: task.title,
+            value: task.id,
+        })),
+    });
 
     return (
         <Box
@@ -79,21 +97,76 @@ export const ViewerSelectionLayer = ({
                     )}
 
                     {selectionPayload && (
-                        <Button
+                        <VStack
                             position="absolute"
                             left={`${draftSelection.left}px`}
                             top={`${draftSelection.top + draftSelection.height + 12}px`}
                             zIndex={4}
-                            size="sm"
-                            colorPalette="red"
+                            align="stretch"
+                            gap={2}
+                            maxW="280px"
                             pointerEvents="auto"
                             onPointerDown={stopPointerPropagation}
                             onPointerUp={stopPointerPropagation}
-                            onClick={onSubmitSelection}
                         >
-                            <LuSend />
-                            Отправить фрагмент
-                        </Button>
+                            <Box
+                                px={3}
+                                py={2}
+                                borderRadius="lg"
+                                bg="white"
+                                boxShadow="lg"
+                            >
+                                <Text mb={1} fontSize="xs" color="gray.500">
+                                    Какое задание проверяем?
+                                </Text>
+                                <Select.Root
+                                    collection={taskCollection}
+                                    size="sm"
+                                    width="100%"
+                                    positioning={{ sameWidth: true }}
+                                    value={
+                                        selectedTaskId ? [selectedTaskId] : []
+                                    }
+                                    onValueChange={({ value }) =>
+                                        onChangeTask(value[0] ?? '')
+                                    }
+                                >
+                                    <Select.HiddenSelect />
+                                    <Select.Control>
+                                        <Select.Trigger>
+                                            <Select.ValueText placeholder="Выбери задание" />
+                                        </Select.Trigger>
+                                    </Select.Control>
+                                    <Portal>
+                                        <Select.Positioner>
+                                            <Select.Content>
+                                                {taskCollection.items.map(
+                                                    (task) => (
+                                                        <Select.Item
+                                                            key={task.value}
+                                                            item={task}
+                                                        >
+                                                            <Select.ItemText>
+                                                                {task.label}
+                                                            </Select.ItemText>
+                                                            <Select.ItemIndicator />
+                                                        </Select.Item>
+                                                    )
+                                                )}
+                                            </Select.Content>
+                                        </Select.Positioner>
+                                    </Portal>
+                                </Select.Root>
+                            </Box>
+                            <Button
+                                size="sm"
+                                colorPalette="red"
+                                onClick={onSubmitSelection}
+                            >
+                                <LuSend />
+                                Проверить выделение
+                            </Button>
+                        </VStack>
                     )}
                 </>
             )}

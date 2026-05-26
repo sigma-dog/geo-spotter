@@ -9,6 +9,8 @@ import {
     Portal,
 } from '@chakra-ui/react';
 
+import { useStartSoloGameSessionMutation } from 'shared/api/game';
+import { toaster } from 'shared/ui/chakra/toaster';
 import { useOpenAddFriendsPanel } from 'widgets/addFriendsPanel';
 import { EditProfilePanel } from 'widgets/editProfilePanel';
 import { ProfilePanel } from 'widgets/profilePanel';
@@ -16,6 +18,8 @@ import { ProfilePanel } from 'widgets/profilePanel';
 const Home: FC = () => {
     const [isOpenEditProfilePanel, setIsOpenEditProfilePanel] = useState(false);
     const navigate = useNavigate();
+    const [startSoloGameSession, { isLoading: isStartingSoloGame }] =
+        useStartSoloGameSessionMutation();
 
     const handleCloseEditProfilePanel = ({ open }: DialogOpenChangeDetails) => {
         setIsOpenEditProfilePanel(open);
@@ -27,7 +31,27 @@ const Home: FC = () => {
 
     const openAddFriendsPanel = useOpenAddFriendsPanel();
     const openGame = () => {
-        navigate('/game');
+        void (async () => {
+            try {
+                const session = await startSoloGameSession().unwrap();
+
+                navigate('/game', {
+                    state: {
+                        preloadedSession: session,
+                    },
+                });
+            } catch (error) {
+                console.error('Failed to start solo game session', error);
+                toaster.create({
+                    title: 'Не удалось начать игру',
+                    description:
+                        error instanceof Error
+                            ? error.message
+                            : 'Unexpected client-side error.',
+                    type: 'error',
+                });
+            }
+        })();
     };
 
     return (
@@ -56,9 +80,10 @@ const Home: FC = () => {
                                 variant="outline"
                                 size="sm"
                                 onClick={openGame}
+                                loading={isStartingSoloGame}
                             >
                                 <LuPlay />
-                                Начать игру
+                                Одиночная игра
                             </Button>
                             <ActionBar.Separator />
                             <Button

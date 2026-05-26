@@ -22,7 +22,8 @@ model User {
   currentHashedRefreshToken String? @map("current_hashed_refresh_token")
 
   achievements         UserAchievement[]
-  gameTaskAttempts     TaskAttempt[]
+  gameSessions     GameSession[]
+  gameTaskAttempts TaskAttempt[]
   tasksResults         UserTaskResult[]
   friendshipsInitiated Friendship[]      @relation("FriendshipInitiator")
   friendshipsReceived  Friendship[]      @relation("FriendshipReceiver")
@@ -103,11 +104,60 @@ model GameTask {
   target      String
 
   attempts TaskAttempt[]
+  sessionTasks GameSessionTask[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("game_tasks")
+}
+
+model GameSession {
+  id String @id @default(uuid())
+
+  mode   GameSessionMode
+  status GameSessionStatus
+
+  startedAt  DateTime  @default(now()) @map("started_at")
+  finishedAt DateTime? @map("finished_at")
+
+  user   User   @relation(fields: [userId], references: [id])
+  userId String @map("user_id")
+
+  tasks TaskAttempt[]
+  gameSessionTasks GameSessionTask[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId, status, mode])
+  @@map("game_sessions")
+}
+
+model GameSessionTask {
+  id String @id @default(uuid())
+
+  orderIndex Int @map("order_index")
+  status     GameSessionTaskStatus
+  completedAt DateTime? @map("completed_at")
+
+  session   GameSession @relation(fields: [sessionId], references: [id])
+  sessionId String      @map("session_id")
+
+  gameTask   GameTask @relation(fields: [gameTaskId], references: [id])
+  gameTaskId String   @map("game_task_id")
+
+  completedByAttempt   TaskAttempt? @relation("CompletedTaskAttempts", fields: [completedByAttemptId], references: [id])
+  completedByAttemptId String?      @unique @map("completed_by_attempt_id")
+
+  attempts TaskAttempt[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([sessionId, orderIndex])
+  @@index([sessionId, status])
+  @@map("game_session_tasks")
 }
 
 model TaskAttempt {
@@ -140,6 +190,14 @@ model TaskAttempt {
   user   User   @relation(fields: [userId], references: [id])
   userId String @map("user_id")
 
+  session   GameSession? @relation(fields: [sessionId], references: [id])
+  sessionId String?      @map("session_id")
+
+  sessionTask   GameSessionTask? @relation(fields: [sessionTaskId], references: [id])
+  sessionTaskId String?          @map("session_task_id")
+
+  completedSessionTasks GameSessionTask[] @relation("CompletedTaskAttempts")
+
   gameTask   GameTask @relation(fields: [gameTaskId], references: [id])
   gameTaskId String   @map("game_task_id")
 
@@ -148,6 +206,8 @@ model TaskAttempt {
 
   @@index([userId, createdAt])
   @@index([gameTaskId, createdAt])
+  @@index([sessionId, createdAt])
+  @@index([sessionTaskId, createdAt])
   @@map("task_attempts")
 }
 
@@ -202,4 +262,26 @@ enum TaskAttemptVerdict {
   UNCERTAIN
 
   @@map("task_attempt_verdict")
+}
+
+enum GameSessionMode {
+  SOLO
+  MULTIPLAYER
+
+  @@map("game_session_mode")
+}
+
+enum GameSessionStatus {
+  ACTIVE
+  COMPLETED
+  ABANDONED
+
+  @@map("game_session_status")
+}
+
+enum GameSessionTaskStatus {
+  PENDING
+  COMPLETED
+
+  @@map("game_session_task_status")
 }

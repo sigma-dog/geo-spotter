@@ -1,1 +1,6 @@
-export { useSubmitGameTaskSelectionMutation } from './gameApi';
+export {
+    useCompleteGameTaskForDebugMutation,
+    useGetActiveGameSessionQuery,
+    useStartSoloGameSessionMutation,
+    useSubmitGameTaskSelectionMutation,
+} from './gameApi';

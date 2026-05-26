@@ -12,6 +12,7 @@ Verdict = Literal['match', 'no_match', 'uncertain']
 class TargetSpec:
     class_name: TargetClass
     raw_target: str
+    visible_attributes: tuple[str, ...] = ()
 
 
 @dataclass

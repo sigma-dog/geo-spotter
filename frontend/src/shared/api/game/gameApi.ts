@@ -1,4 +1,5 @@
 import type {
+    GameSession,
     SelectionPayload,
     SelectionVerificationResult,
 } from 'pages/game/lib/types';
@@ -8,6 +9,27 @@ import { apiMethods } from '../constants';
 
 const gameApi = api.injectEndpoints({
     endpoints: (build) => ({
+        completeGameTaskForDebug: build.mutation<
+            GameSession,
+            { sessionId: string; sessionTaskId: string }
+        >({
+            query: ({ sessionId, sessionTaskId }) => ({
+                url: `/game/debug/sessions/${sessionId}/tasks/${sessionTaskId}/complete`,
+                method: apiMethods.post,
+            }),
+        }),
+        getActiveGameSession: build.query<GameSession | null, void>({
+            query: () => ({
+                url: '/game/sessions/active',
+                method: apiMethods.get,
+            }),
+        }),
+        startSoloGameSession: build.mutation<GameSession, void>({
+            query: () => ({
+                url: '/game/sessions/solo/start',
+                method: apiMethods.post,
+            }),
+        }),
         submitGameTaskSelection: build.mutation<
             SelectionVerificationResult,
             SelectionPayload
@@ -21,4 +43,9 @@ const gameApi = api.injectEndpoints({
     }),
 });
 
-export const { useSubmitGameTaskSelectionMutation } = gameApi;
+export const {
+    useCompleteGameTaskForDebugMutation,
+    useGetActiveGameSessionQuery,
+    useStartSoloGameSessionMutation,
+    useSubmitGameTaskSelectionMutation,
+} = gameApi;

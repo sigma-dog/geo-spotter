@@ -15,6 +15,10 @@ export class GameDebugService {
 
     constructor(private readonly configService: ConfigService) {}
 
+    isGameplayDebugEnabled() {
+        return this.configService.get<string>('NODE_ENV') !== 'production';
+    }
+
     isEnabled() {
         return (
             this.configService.get<string>(

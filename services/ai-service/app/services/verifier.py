@@ -59,10 +59,20 @@ def verify_selection(payload: VerificationRequest) -> VerificationResponse:
 
     vlm_result = None
     if segmentation_result is not None:
-        vlm_result = get_vlm_verifier().verify(
-            target_spec,
-            segmentation_result,
-        )
+        try:
+            vlm_result = get_vlm_verifier().verify(
+                target_spec,
+                segmentation_result,
+            )
+        except Exception as error:
+            vlm_result = None
+            vlm_error_reason = (
+                str(error) if isinstance(error, Exception) else 'unknown_vlm_error'
+            )
+        else:
+            vlm_error_reason = None
+    else:
+        vlm_error_reason = None
 
     rule_result = evaluate_pipeline(
         detection_result,
@@ -74,6 +84,7 @@ def verify_selection(payload: VerificationRequest) -> VerificationResponse:
         detection_result,
         segmentation_result,
         vlm_result,
+        vlm_error_reason,
         rule_result,
         image,
         prepared_image,
@@ -114,6 +125,7 @@ def build_pipeline_debug(
     detection_result,
     segmentation_result,
     vlm_result,
+    vlm_error_reason,
     rule_result,
     input_image: Image.Image,
     prepared_image: Image.Image,
@@ -130,6 +142,7 @@ def build_pipeline_debug(
         'target': {
             'class_name': target_spec.class_name,
             'raw_target': target_spec.raw_target,
+            'visible_attributes': list(target_spec.visible_attributes),
         },
         'detector': {
             'all_candidates': [
@@ -175,6 +188,10 @@ def build_pipeline_debug(
                 'source': vlm_result.source,
             }
             if vlm_result is not None
+            else {
+                'error': vlm_error_reason,
+            }
+            if vlm_error_reason is not None
             else None
         ),
         'rule_engine': {

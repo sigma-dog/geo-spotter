@@ -19,13 +19,9 @@
             "shared/*": ["./src/shared/*"],
             "widgets/*": ["./src/widgets/*"],
             "assets/*": ["./src/assets/*"],
-            "components/*": ["./src/components/*"],
-            "ymaps3": ["./node_modules/@yandex/ymaps3-types"]
+            "components/*": ["./src/components/*"]
         },
 
-        "typeRoots": [
-            "./node_modules/@types",
-            "./node_modules/@yandex/ymaps3-types"
-        ]
+        "typeRoots": ["./node_modules/@types"]
     }
 }

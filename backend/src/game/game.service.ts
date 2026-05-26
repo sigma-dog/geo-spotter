@@ -1,21 +1,53 @@
 import {
+    BadRequestException,
     Injectable,
     InternalServerErrorException,
     NotFoundException,
 } from '@nestjs/common';
-import type { GameTask } from '../../generated/prisma/client';
+import type { GameSession, Prisma } from '../../generated/prisma/client';
 import {
+    GameSessionMode,
+    GameSessionStatus,
+    GameSessionTaskStatus,
     TaskAttemptStatus,
     TaskAttemptVerdict,
 } from '../../generated/prisma/enums';
 import { PrismaService } from '../prisma/prisma.service';
 import { SubmitSelectionDto } from './dto/submit-selection.dto';
-import { TASK_ATTEMPT_VERDICT } from './game.constants';
+import {
+    SOLO_GAME_TASK_COUNT,
+    SOLO_GAME_TASK_POOL,
+    TASK_ATTEMPT_VERDICT,
+} from './game.constants';
 import { GameAiClientService } from './game-ai-client.service';
 import { GameDebugService } from './game-debug.service';
 import { GameMapillaryService } from './game-mapillary.service';
 import { GameSelectionVerifierService } from './game-selection-verifier.service';
-import type { AiVerificationRequest, VerificationResponse } from './game.types';
+import type {
+    AiVerificationRequest,
+    GameSessionView,
+    VerificationResponse,
+} from './game.types';
+
+const ACTIVE_SESSION_INCLUDE = {
+    gameSessionTasks: {
+        include: {
+            gameTask: true,
+        },
+        orderBy: {
+            orderIndex: 'asc',
+        },
+    },
+    _count: {
+        select: {
+            tasks: true,
+        },
+    },
+} satisfies Prisma.GameSessionInclude;
+
+type SessionWithTasks = Prisma.GameSessionGetPayload<{
+    include: typeof ACTIVE_SESSION_INCLUDE;
+}>;
 
 @Injectable()
 export class GameService {
@@ -27,22 +59,202 @@ export class GameService {
         private readonly prismaService: PrismaService
     ) {}
 
+    async startSoloSession(userId: string): Promise<GameSessionView> {
+        await this.assertUserExists(userId);
+
+        const session = await this.prismaService.$transaction(async (tx) => {
+            await tx.gameSession.updateMany({
+                where: {
+                    userId,
+                    status: GameSessionStatus.ACTIVE,
+                },
+                data: {
+                    finishedAt: new Date(),
+                    status: GameSessionStatus.ABANDONED,
+                },
+            });
+
+            const taskRecords = await Promise.all(
+                SOLO_GAME_TASK_POOL.map((task) =>
+                    tx.gameTask.upsert({
+                        where: { externalId: task.externalId },
+                        create: {
+                            description: task.description,
+                            externalId: task.externalId,
+                            target: task.target,
+                            title: task.title,
+                        },
+                        update: {
+                            description: task.description,
+                            target: task.target,
+                            title: task.title,
+                        },
+                    })
+                )
+            );
+
+            const selectedTasks = this.shuffle(taskRecords).slice(
+                0,
+                SOLO_GAME_TASK_COUNT
+            );
+            const createdSession = await tx.gameSession.create({
+                data: {
+                    mode: GameSessionMode.SOLO,
+                    status: GameSessionStatus.ACTIVE,
+                    userId,
+                    gameSessionTasks: {
+                        create: selectedTasks.map((task, orderIndex) => ({
+                            gameTaskId: task.id,
+                            orderIndex,
+                            status: GameSessionTaskStatus.PENDING,
+                        })),
+                    },
+                },
+                include: ACTIVE_SESSION_INCLUDE,
+            });
+
+            return createdSession;
+        });
+
+        return this.mapSessionView(session);
+    }
+
+    async getActiveSession(userId: string): Promise<GameSessionView | null> {
+        await this.assertUserExists(userId);
+
+        const session = await this.prismaService.gameSession.findFirst({
+            where: {
+                userId,
+                status: GameSessionStatus.ACTIVE,
+            },
+            include: ACTIVE_SESSION_INCLUDE,
+            orderBy: {
+                createdAt: 'desc',
+            },
+        });
+
+        if (!session) {
+            return null;
+        }
+
+        return this.mapSessionView(session);
+    }
+
+    async completeTaskForDebug(
+        userId: string,
+        sessionId: string,
+        sessionTaskId: string
+    ): Promise<GameSessionView> {
+        await this.assertUserExists(userId);
+
+        if (!this.gameDebugService.isGameplayDebugEnabled()) {
+            throw new NotFoundException('Debug endpoint is unavailable.');
+        }
+
+        const session = await this.prismaService.gameSession.findFirst({
+            where: {
+                id: sessionId,
+                userId,
+                status: GameSessionStatus.ACTIVE,
+            },
+            include: {
+                gameSessionTasks: {
+                    where: {
+                        id: sessionTaskId,
+                    },
+                    include: {
+                        gameTask: true,
+                    },
+                },
+            },
+        });
+
+        if (!session) {
+            throw new NotFoundException(
+                'Активная игровая сессия не найдена или уже завершена.'
+            );
+        }
+
+        const sessionTask = session.gameSessionTasks[0];
+
+        if (!sessionTask) {
+            throw new NotFoundException(
+                'Выбранное задание не найдено в активной сессии.'
+            );
+        }
+
+        await this.completeMatchedTask({
+            sessionId: session.id,
+            sessionMode: session.mode,
+            sessionTaskId: sessionTask.id,
+        });
+
+        const updatedSession = await this.prismaService.gameSession.findUnique({
+            where: {
+                id: session.id,
+            },
+            include: ACTIVE_SESSION_INCLUDE,
+        });
+
+        if (!updatedSession) {
+            throw new NotFoundException(
+                'Игровая сессия не найдена после обновления.'
+            );
+        }
+
+        return this.mapSessionView(updatedSession);
+    }
+
     async submitSelection(
         userId: string,
         dto: SubmitSelectionDto
     ): Promise<VerificationResponse> {
-        const user = await this.prismaService.user.findUnique({
-            where: { id: userId },
-            select: { id: true },
+        await this.assertUserExists(userId);
+
+        const session = await this.prismaService.gameSession.findFirst({
+            where: {
+                id: dto.sessionId,
+                userId,
+                status: GameSessionStatus.ACTIVE,
+            },
+            include: {
+                gameSessionTasks: {
+                    where: {
+                        id: dto.sessionTaskId,
+                    },
+                    include: {
+                        gameTask: true,
+                    },
+                },
+            },
         });
 
-        if (!user) {
+        if (!session) {
             throw new NotFoundException(
-                `Пользователь с id ${userId} не найден.`
+                'Активная игровая сессия не найдена или уже завершена.'
             );
         }
 
-        const gameTask = await this.upsertGameTask(dto);
+        const sessionTask = session.gameSessionTasks[0];
+
+        if (!sessionTask) {
+            throw new NotFoundException(
+                'Выбранное задание не найдено в сессии.'
+            );
+        }
+
+        if (sessionTask.status === GameSessionTaskStatus.COMPLETED) {
+            throw new BadRequestException(
+                'Это задание уже выполнено. Выбери другое задание из списка.'
+            );
+        }
+
+        const resolvedTask = {
+            id: sessionTask.gameTask.externalId,
+            target: sessionTask.gameTask.target,
+            title: sessionTask.gameTask.title,
+        };
+        const gameTask = sessionTask.gameTask;
         const attempt = await this.prismaService.taskAttempt.create({
             data: {
                 capturedAt: new Date(dto.capturedAt),
@@ -52,6 +264,8 @@ export class GameService {
                 selectionLeft: dto.selection.left,
                 selectionTop: dto.selection.top,
                 selectionWidth: dto.selection.width,
+                sessionId: session.id,
+                sessionTaskId: sessionTask.id,
                 status: TaskAttemptStatus.PENDING,
                 userId,
                 worldLat: dto.worldLocation.lat,
@@ -68,18 +282,24 @@ export class GameService {
             );
             const verificationPayload = this.createAiVerificationPayload(
                 attempt.id,
-                dto,
+                resolvedTask,
                 asset
             );
             await this.gameDebugService.saveSelectionArtifacts({
                 asset,
                 attemptId: attempt.id,
-                dto,
+                dto: {
+                    ...dto,
+                    task: resolvedTask,
+                },
                 verificationPayload,
             });
             const verification = await this.verifySelection(
                 verificationPayload,
-                dto
+                {
+                    ...dto,
+                    task: resolvedTask,
+                }
             );
 
             await this.prismaService.taskAttempt.update({
@@ -98,12 +318,29 @@ export class GameService {
                 },
             });
 
+            let taskCompleted = false;
+            let sessionCompleted = false;
+
+            if (verification.verdict === TASK_ATTEMPT_VERDICT.match) {
+                const completionState = await this.completeMatchedTask({
+                    attemptId: attempt.id,
+                    sessionId: session.id,
+                    sessionMode: session.mode,
+                    sessionTaskId: sessionTask.id,
+                });
+
+                taskCompleted = completionState.taskCompleted;
+                sessionCompleted = completionState.sessionCompleted;
+            }
+
             return {
                 attemptId: attempt.id,
                 confidence: verification.confidence,
                 debug: verification.debug ?? null,
                 reason: verification.reason,
+                sessionCompleted,
                 source: verification.source,
+                taskCompleted,
                 verdict: verification.verdict,
             };
         } catch (error) {
@@ -128,9 +365,81 @@ export class GameService {
         }
     }
 
+    private async completeMatchedTask(params: {
+        attemptId?: string;
+        sessionId: string;
+        sessionMode: GameSession['mode'];
+        sessionTaskId: string;
+    }) {
+        return this.prismaService.$transaction(async (tx) => {
+            const task = await tx.gameSessionTask.findUnique({
+                where: {
+                    id: params.sessionTaskId,
+                },
+                select: {
+                    status: true,
+                },
+            });
+
+            if (!task) {
+                throw new NotFoundException('Игровое задание не найдено.');
+            }
+
+            if (task.status === GameSessionTaskStatus.COMPLETED) {
+                return {
+                    sessionCompleted: false,
+                    taskCompleted: false,
+                };
+            }
+
+            await tx.gameSessionTask.update({
+                where: {
+                    id: params.sessionTaskId,
+                },
+                data: {
+                    completedAt: new Date(),
+                    completedByAttemptId: params.attemptId ?? null,
+                    status: GameSessionTaskStatus.COMPLETED,
+                },
+            });
+
+            const pendingTasksCount = await tx.gameSessionTask.count({
+                where: {
+                    sessionId: params.sessionId,
+                    status: GameSessionTaskStatus.PENDING,
+                },
+            });
+
+            const shouldCompleteSession =
+                pendingTasksCount === 0 &&
+                params.sessionMode === GameSessionMode.SOLO;
+
+            if (shouldCompleteSession) {
+                await tx.gameSession.update({
+                    where: {
+                        id: params.sessionId,
+                    },
+                    data: {
+                        finishedAt: new Date(),
+                        status: GameSessionStatus.COMPLETED,
+                    },
+                });
+            }
+
+            return {
+                sessionCompleted: shouldCompleteSession,
+                taskCompleted: true,
+            };
+        });
+    }
+
     private createAiVerificationPayload(
         attemptId: string,
-        dto: SubmitSelectionDto,
+        task: {
+            id: string;
+            target: string;
+            title: string;
+        },
         asset: Awaited<
             ReturnType<GameMapillaryService['prepareSelectionAsset']>
         >
@@ -146,24 +455,8 @@ export class GameService {
                 sourceImageUrl: asset.imageUrl,
                 sourceImageWidth: asset.sourceImageWidth,
             },
-            task: dto.task,
+            task,
         };
-    }
-
-    private upsertGameTask(dto: SubmitSelectionDto): Promise<GameTask> {
-        return this.prismaService.gameTask.upsert({
-            where: { externalId: dto.task.id },
-            create: {
-                description: null,
-                externalId: dto.task.id,
-                target: dto.task.target,
-                title: dto.task.title,
-            },
-            update: {
-                target: dto.task.target,
-                title: dto.task.title,
-            },
-        });
     }
 
     private async verifySelection(
@@ -191,6 +484,32 @@ export class GameService {
         }
     }
 
+    private mapSessionView(session: SessionWithTasks): GameSessionView {
+        const completedTasksCount = session.gameSessionTasks.filter(
+            (task) => task.status === GameSessionTaskStatus.COMPLETED
+        ).length;
+
+        return {
+            attemptsCount: session._count.tasks,
+            completedTasksCount,
+            finishedAt: session.finishedAt?.toISOString() ?? null,
+            id: session.id,
+            mode: session.mode,
+            startedAt: session.startedAt.toISOString(),
+            status: session.status,
+            tasks: session.gameSessionTasks.map((task) => ({
+                completedAt: task.completedAt?.toISOString() ?? null,
+                description: task.gameTask.description,
+                id: task.id,
+                orderIndex: task.orderIndex,
+                status: task.status,
+                target: task.gameTask.target,
+                title: task.gameTask.title,
+            })),
+            totalTasksCount: session.gameSessionTasks.length,
+        };
+    }
+
     private mapVerdictToPrisma(verdict: VerificationResponse['verdict']) {
         if (verdict === TASK_ATTEMPT_VERDICT.match) {
             return TaskAttemptVerdict.MATCH;
@@ -207,5 +526,32 @@ export class GameService {
         throw new InternalServerErrorException(
             'Неизвестный verdict при обновлении TaskAttempt.'
         );
+    }
+
+    private async assertUserExists(userId: string) {
+        const user = await this.prismaService.user.findUnique({
+            where: { id: userId },
+            select: { id: true },
+        });
+
+        if (!user) {
+            throw new NotFoundException(
+                `Пользователь с id ${userId} не найден.`
+            );
+        }
+    }
+
+    private shuffle<T>(items: T[]) {
+        const nextItems = [...items];
+
+        for (let index = nextItems.length - 1; index > 0; index -= 1) {
+            const randomIndex = Math.floor(Math.random() * (index + 1));
+            const currentItem = nextItems[index];
+
+            nextItems[index] = nextItems[randomIndex];
+            nextItems[randomIndex] = currentItem;
+        }
+
+        return nextItems;
     }
 }

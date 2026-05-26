@@ -1,35 +1,52 @@
-import { LuArrowLeft } from 'react-icons/lu';
+import { LuArrowLeft, LuCheck, LuCircleDashed } from 'react-icons/lu';
 import { useNavigate } from 'react-router-dom';
-import { Box, Button, HStack, Spinner, Text, VStack } from '@chakra-ui/react';
+import {
+    Accordion,
+    Box,
+    Button,
+    HStack,
+    Spinner,
+    Text,
+    VStack,
+} from '@chakra-ui/react';
 
-import type { GameTask } from '../lib/types';
+import type { GameSession, GameTask } from '../lib/types';
 
 type GameSidebarProps = {
+    activeTask: GameTask | null;
+    debugCompletingTaskId: string | null;
     hasSelectedSpot: boolean;
-    panoramaAddress: string | null;
-    isViewerLoading: boolean;
-    task: GameTask;
+    isStartingGame: boolean;
+    isDebugMode: boolean;
+    session: GameSession | null;
+    onCompleteTaskForDebug: (taskId: string) => void;
 };
 
 export const GameSidebar = ({
+    activeTask,
+    debugCompletingTaskId,
     hasSelectedSpot,
-    panoramaAddress,
-    isViewerLoading,
-    task,
+    isStartingGame,
+    isDebugMode,
+    session,
+    onCompleteTaskForDebug,
 }: GameSidebarProps) => {
     const navigate = useNavigate();
+    const isSessionActive = session?.status === 'ACTIVE';
+    const isSessionCompleted = session?.status === 'COMPLETED';
 
     return (
-        <HStack align="flex-start" w="auto" maxW="100%">
+        <HStack align="flex-start" w="auto" pointerEvents="none">
             <VStack
                 align="stretch"
                 gap={4}
                 minW="360px"
-                maxW="100%"
+                maxW="500px"
                 p={5}
                 borderRadius="2xl"
                 bg="white"
                 boxShadow="sm"
+                pointerEvents="auto"
             >
                 <Button
                     size="sm"
@@ -40,6 +57,7 @@ export const GameSidebar = ({
                 >
                     <LuArrowLeft />В хаб
                 </Button>
+
                 <Box
                     p={4}
                     borderRadius="xl"
@@ -48,37 +66,151 @@ export const GameSidebar = ({
                     borderColor="red.100"
                 >
                     <Text fontSize="sm" color="red.400">
-                        {hasSelectedSpot ? 'Текущее задание' : 'Старт игры'}
+                        Одиночная игра
                     </Text>
                     <Text fontSize="xl" fontWeight="700" color="red.700">
-                        {hasSelectedSpot
-                            ? `Найти: ${task.target}`
-                            : 'Выбери любую точку на карте'}
+                        {isSessionActive
+                            ? `Найди предметы: ${session.completedTasksCount}/${session.totalTasksCount}`
+                            : isSessionCompleted
+                              ? `Сессия завершена: ${session.completedTasksCount}/${session.totalTasksCount}`
+                              : 'Создаем игровую сессию'}
                     </Text>
                     <Text mt={2} color="gray.600">
-                        {hasSelectedSpot
-                            ? task.description
-                            : 'После начала игры карта полностью свободна: ' +
-                              'кликни в любое место, и мы попробуем открыть ближайшую панораму Mapillary.'}
+                        {isSessionActive
+                            ? hasSelectedSpot
+                                ? 'Перемещайся по карте, открывай панорамы и отправляй выделение на проверку.'
+                                : 'Выбери точку на карте или кликни по покрытию Mapillary, чтобы открыть панораму.'
+                            : isSessionCompleted
+                              ? 'Все задания выполнены. Можно вернуться в хаб или сразу начать новую сессию.'
+                              : 'Подбираем задания и готовим карту к поиску объектов.'}
                     </Text>
+                    {!isSessionActive && isStartingGame && (
+                        <HStack mt={4} color="red.500">
+                            <Spinner size="sm" />
+                            <Text fontSize="sm" fontWeight="600">
+                                Запускаем игру...
+                            </Text>
+                        </HStack>
+                    )}
                 </Box>
-            </VStack>
 
-            <HStack
-                zIndex={7}
-                px={2}
-                py={1}
-                borderRadius="lg"
-                bg="blackAlpha.700"
-                color="white"
-                minW="fit-content"
-                maxW="100%"
-            >
-                <Text fontWeight="600" fontSize="lg">
-                    {panoramaAddress ?? task.title}
-                </Text>
-                {isViewerLoading && <Spinner size="sm" />}
-            </HStack>
+                {session && session.tasks.length > 0 && (
+                    <VStack align="stretch" gap={3}>
+                        <Text fontSize="sm" fontWeight="700" color="gray.700">
+                            Список заданий
+                        </Text>
+                        <Accordion.Root
+                            collapsible
+                            defaultValue={
+                                activeTask ? [activeTask.id] : undefined
+                            }
+                        >
+                            {session.tasks.map((task, index) => {
+                                const isCompleted = task.status === 'COMPLETED';
+                                const isCurrentTask =
+                                    activeTask?.id === task.id;
+
+                                return (
+                                    <Accordion.Item
+                                        key={task.id}
+                                        value={task.id}
+                                    >
+                                        <Accordion.ItemTrigger
+                                            px={3}
+                                            py={3}
+                                            // borderRadius="xl"
+                                            // borderWidth="1px"
+                                            borderColor={
+                                                isCompleted
+                                                    ? 'green.200'
+                                                    : isCurrentTask
+                                                      ? 'red.200'
+                                                      : 'gray.200'
+                                            }
+                                            bg={
+                                                isCompleted
+                                                    ? 'green.50'
+                                                    : isCurrentTask
+                                                      ? 'red.50'
+                                                      : 'gray.50'
+                                            }
+                                        >
+                                            <HStack
+                                                flex="1"
+                                                align="flex-start"
+                                                gap={3}
+                                            >
+                                                <Box
+                                                    pt={0.5}
+                                                    color={
+                                                        isCompleted
+                                                            ? 'green.500'
+                                                            : 'gray.400'
+                                                    }
+                                                >
+                                                    {isCompleted ? (
+                                                        <LuCheck />
+                                                    ) : (
+                                                        <LuCircleDashed />
+                                                    )}
+                                                </Box>
+                                                <Box flex="1" textAlign="left">
+                                                    <Text
+                                                        fontWeight="700"
+                                                        color="gray.800"
+                                                    >
+                                                        {index + 1}.{' '}
+                                                        {task.target}
+                                                    </Text>
+                                                </Box>
+                                                {isDebugMode &&
+                                                    !isCompleted &&
+                                                    session?.status ===
+                                                        'ACTIVE' && (
+                                                        <Button
+                                                            size="xs"
+                                                            colorPalette="orange"
+                                                            variant="outline"
+                                                            loading={
+                                                                debugCompletingTaskId ===
+                                                                task.id
+                                                            }
+                                                            onClick={(
+                                                                event
+                                                            ) => {
+                                                                event.stopPropagation();
+                                                                onCompleteTaskForDebug(
+                                                                    task.id
+                                                                );
+                                                            }}
+                                                        >
+                                                            Debug complete
+                                                        </Button>
+                                                    )}
+                                            </HStack>
+                                            <Accordion.ItemIndicator />
+                                        </Accordion.ItemTrigger>
+                                        <Accordion.ItemContent>
+                                            <Accordion.ItemBody
+                                                px={3}
+                                                pb={3}
+                                                pt={2}
+                                            >
+                                                <Text
+                                                    fontSize="sm"
+                                                    color="gray.600"
+                                                >
+                                                    {task.description}
+                                                </Text>
+                                            </Accordion.ItemBody>
+                                        </Accordion.ItemContent>
+                                    </Accordion.Item>
+                                );
+                            })}
+                        </Accordion.Root>
+                    </VStack>
+                )}
+            </VStack>
         </HStack>
     );
 };

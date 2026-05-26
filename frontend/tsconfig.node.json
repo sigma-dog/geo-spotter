@@ -21,10 +21,7 @@
         "erasableSyntaxOnly": true,
         "noFallthroughCasesInSwitch": true,
         "noUncheckedSideEffectImports": true,
-        "typeRoots": [
-            "./node_modules/@types",
-            "./node_modules/@yandex/ymaps3-types"
-        ]
+        "typeRoots": ["./node_modules/@types"]
     },
     "include": ["vite.config.ts"]
 }

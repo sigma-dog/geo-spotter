@@ -184,6 +184,12 @@ class DebugInfoDto {
 }
 
 export class SubmitSelectionDto {
+    @IsString()
+    sessionId: string;
+
+    @IsString()
+    sessionTaskId: string;
+
     @IsISO8601()
     capturedAt: string;
 

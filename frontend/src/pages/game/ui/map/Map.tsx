@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { LuMap, LuMousePointerClick, LuScanSearch } from 'react-icons/lu';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
     ActionBar,
     Box,
@@ -7,6 +8,7 @@ import {
     HStack,
     IconButton,
     Portal,
+    Spinner,
     Text,
     VStack,
 } from '@chakra-ui/react';
@@ -14,7 +16,12 @@ import type { FetchBaseQueryError } from '@reduxjs/toolkit/query';
 import maplibregl from 'maplibre-gl';
 
 import { useGetCurrentUserDataQuery } from 'shared/api/currentUser';
-import { useSubmitGameTaskSelectionMutation } from 'shared/api/game';
+import {
+    useCompleteGameTaskForDebugMutation,
+    useGetActiveGameSessionQuery,
+    useStartSoloGameSessionMutation,
+    useSubmitGameTaskSelectionMutation,
+} from 'shared/api/game';
 import { toaster } from 'shared/ui/chakra/toaster';
 import { Tooltip } from 'shared/ui/chakra/tooltip';
 
@@ -22,7 +29,12 @@ import { useGameSpotState } from './hooks/useGameSpotState';
 import { useMapillaryViewer } from './hooks/useMapillaryViewer';
 import { useViewerSelectionState } from './hooks/useViewerSelectionState';
 import { createUserMarkerElement } from './utils';
-import type { GameTask, SelectionPayload } from '../../lib/types';
+import type {
+    GameSession,
+    SelectionPayload,
+    SelectionVerificationResult,
+} from '../../lib/types';
+import { GameResultsDialog } from '../GameResultsDialog';
 import { GameSidebar } from '../GameSidebar';
 import { ViewerSelectionLayer } from '../ViewerSelectionLayer';
 import { ViewerStatusOverlay } from '../ViewerStatusOverlay';
@@ -40,13 +52,6 @@ const DEFAULT_MAP_ZOOM = 1.6;
 const MIN_PANORAMA_MARKER_ZOOM = 6;
 const MAPILLARY_TILE_URL =
     'https://tiles.mapillary.com/maps/vtp/mly1_public/2/{z}/{x}/{y}?access_token=';
-const CURRENT_GAME_TASK: GameTask = {
-    id: 'global-object-hunt',
-    title: 'Свободный поиск по карте',
-    description:
-        'Открой панораму в любой точке мира и выдели объект, который подходит под текущее задание.',
-    target: 'Желтая машина',
-};
 
 const loadImageAsBase64 = async (url: string) => {
     const response = await fetch(url);
@@ -91,13 +96,87 @@ type PanoramaMarkerState = {
     status: 'idle' | 'ready' | 'error';
 };
 
+const getFirstPendingTask = (session: GameSession | null) => {
+    return session?.tasks.find((task) => task.status !== 'COMPLETED') ?? null;
+};
+
+const applySelectionResultToSession = (
+    session: GameSession,
+    selectedTaskId: string | null,
+    result: SelectionVerificationResult
+) => {
+    const nextSession: GameSession = {
+        ...session,
+        attemptsCount: session.attemptsCount + 1,
+    };
+
+    if (
+        result.verdict !== 'match' ||
+        !result.taskCompleted ||
+        !selectedTaskId
+    ) {
+        return nextSession;
+    }
+
+    const nextTasks = nextSession.tasks.map((task) => {
+        if (task.id !== selectedTaskId) {
+            return task;
+        }
+
+        return {
+            ...task,
+            completedAt: new Date().toISOString(),
+            status: 'COMPLETED' as const,
+        };
+    });
+    const completedTasksCount = nextTasks.filter(
+        (task) => task.status === 'COMPLETED'
+    ).length;
+
+    return {
+        ...nextSession,
+        completedTasksCount,
+        finishedAt: result.sessionCompleted
+            ? new Date().toISOString()
+            : nextSession.finishedAt,
+        status: result.sessionCompleted
+            ? ('COMPLETED' as const)
+            : ('ACTIVE' as const),
+        tasks: nextTasks,
+    };
+};
+
 export const Map = () => {
     const accessToken = import.meta.env.VITE_MAPILLARY_ACCESS_TOKEN;
+    const location = useLocation();
+    const navigate = useNavigate();
+    const navigationState = location.state as {
+        autoStartSolo?: boolean;
+        preloadedSession?: GameSession;
+    } | null;
     const { data: currentUser } = useGetCurrentUserDataQuery();
+    const {
+        data: activeSessionData,
+        isFetching: isActiveSessionFetching,
+        refetch: refetchActiveSession,
+    } = useGetActiveGameSessionQuery();
+    const [startSoloGameSession, { isLoading: isStartingGame }] =
+        useStartSoloGameSessionMutation();
+    const [completeGameTaskForDebug] = useCompleteGameTaskForDebugMutation();
     const [
         submitGameTaskSelection,
         { data: selectionResult, isLoading: isSubmittingSelection },
     ] = useSubmitGameTaskSelectionMutation();
+    const [sessionSnapshot, setSessionSnapshot] = useState<
+        GameSession | null | undefined
+    >(navigationState?.preloadedSession);
+    const [completedSession, setCompletedSession] =
+        useState<GameSession | null>(null);
+    const [isResultsOpen, setIsResultsOpen] = useState(false);
+    const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+    const [debugCompletingTaskId, setDebugCompletingTaskId] = useState<
+        string | null
+    >(null);
     const {
         hasSelectedSpot,
         resetSelectedSpot,
@@ -113,10 +192,12 @@ export const Map = () => {
         null
     );
     const isMapDraggingRef = useRef(false);
+    const isSessionActiveRef = useRef(false);
+    const autoStartHandledRef = useRef(false);
     const [panoramaMarkerState, setPanoramaMarkerState] =
         useState<PanoramaMarkerState>({
             message:
-                'Приблизь карту и кликни по зелёной линии или точке с покрытием Mapillary.',
+                'Сначала начни игру, затем выбери точку на карте или покрытие Mapillary.',
             status: 'idle',
         });
     const {
@@ -126,6 +207,25 @@ export const Map = () => {
         resolvedViewerState,
         viewerContainerRef,
     } = useMapillaryViewer(accessToken, selectedLocation, selectedImageId);
+
+    const session =
+        sessionSnapshot === undefined
+            ? (activeSessionData ?? null)
+            : sessionSnapshot;
+    const currentWorldLocation =
+        resolvedViewerState.panoramaLocation ?? selectedLocation;
+    const shouldAutoStartSolo = Boolean(navigationState?.autoStartSolo);
+    const isDebugMode = import.meta.env.DEV;
+
+    const activeTask = session
+        ? (session.tasks.find(
+              (task) =>
+                  task.id === selectedTaskId && task.status !== 'COMPLETED'
+          ) ?? getFirstPendingTask(session))
+        : null;
+    const availableTaskOptions =
+        session?.tasks.filter((task) => task.status !== 'COMPLETED') ?? [];
+
     const {
         draftSelection,
         handleSelectionPointerDown,
@@ -142,21 +242,39 @@ export const Map = () => {
         canDrawSelection,
         imageId: resolvedViewerState.imageId,
         imageThumbUrl: resolvedViewerState.imageThumbUrl,
-        onSubmitSelection: async (selectionPayload, selectionDraft) => {
-            void (async () => {
-                console.info(
-                    'Submitting game task selection to backend',
-                    selectionPayload
-                );
+        onSubmitSelection: async (
+            currentSelectionPayload,
+            currentSelectionDraft
+        ) => {
+            if (!session || !activeTask) {
+                toaster.create({
+                    title: 'Нет активного задания',
+                    description:
+                        'Сначала начни игру и выбери незавершённое задание.',
+                    type: 'info',
+                });
+                return;
+            }
 
+            void (async () => {
                 try {
+                    const normalizedPayload: SelectionPayload = {
+                        ...currentSelectionPayload,
+                        sessionId: session.id,
+                        sessionTaskId: activeTask.id,
+                        task: {
+                            id: activeTask.id,
+                            target: activeTask.target,
+                            title: activeTask.title,
+                        },
+                    };
                     let payloadWithImage: SelectionPayload;
 
                     try {
                         const viewportCapture = await captureCurrentFrame();
 
                         payloadWithImage = {
-                            ...selectionPayload,
+                            ...normalizedPayload,
                             debugInfo: {
                                 viewportCapture: {
                                     height: viewportCapture.height,
@@ -172,16 +290,17 @@ export const Map = () => {
                             captureError
                         );
 
-                        const basicSelection =
-                            await projectSelectionToBasic(selectionDraft);
+                        const basicSelection = await projectSelectionToBasic(
+                            currentSelectionDraft
+                        );
 
                         payloadWithImage = {
-                            ...selectionPayload,
+                            ...normalizedPayload,
                             debugInfo: basicSelection.debugInfo,
                             selection: basicSelection.selection,
-                            sourceImageBase64: selectionPayload.imageThumbUrl
+                            sourceImageBase64: normalizedPayload.imageThumbUrl
                                 ? await loadImageAsBase64(
-                                      selectionPayload.imageThumbUrl
+                                      normalizedPayload.imageThumbUrl
                                   )
                                 : null,
                         };
@@ -191,11 +310,6 @@ export const Map = () => {
                         await submitGameTaskSelection(
                             payloadWithImage
                         ).unwrap();
-
-                    console.info(
-                        'Game task selection verification result',
-                        result
-                    );
 
                     toaster.create({
                         title:
@@ -212,6 +326,35 @@ export const Map = () => {
                                   ? 'error'
                                   : 'info',
                     });
+
+                    setSessionSnapshot((currentSession) => {
+                        const baseSession = currentSession ?? session;
+
+                        if (!baseSession) {
+                            return currentSession;
+                        }
+
+                        const nextSession = applySelectionResultToSession(
+                            baseSession,
+                            activeTask.id,
+                            result
+                        );
+
+                        if (nextSession.status === 'COMPLETED') {
+                            setCompletedSession(nextSession);
+                            setIsResultsOpen(true);
+                        }
+
+                        return nextSession;
+                    });
+
+                    if (result.taskCompleted) {
+                        resetSelection();
+                    }
+
+                    if (result.sessionCompleted) {
+                        void refetchActiveSession();
+                    }
                 } catch (error) {
                     console.error(
                         'Failed to submit game task selection',
@@ -235,8 +378,9 @@ export const Map = () => {
                 }
             })();
         },
-        selectedLocation,
-        task: CURRENT_GAME_TASK,
+        sessionId: session?.id ?? null,
+        selectedLocation: currentWorldLocation,
+        task: activeTask,
     });
 
     const updateSelectedMarker = useCallback(
@@ -254,8 +398,8 @@ export const Map = () => {
 
             customMarkerRef.current?.remove();
             customMarkerRef.current = new maplibregl.Marker({
-                element: markerElement,
                 anchor: 'bottom',
+                element: markerElement,
             })
                 .setLngLat([location.lng, location.lat])
                 .addTo(map);
@@ -268,8 +412,17 @@ export const Map = () => {
         if (!customMarkerLocationRef.current) {
             return;
         }
+
         updateSelectedMarker(customMarkerLocationRef.current);
     }, [currentUser?.avatarUrl, currentUser?.username, updateSelectedMarker]);
+
+    const isSessionActive = session?.status === 'ACTIVE';
+    const shouldKeepPanoramaVisible =
+        hasSelectedSpot && (isSessionActive || isResultsOpen);
+
+    useEffect(() => {
+        isSessionActiveRef.current = isSessionActive;
+    }, [isSessionActive]);
 
     const focusMapOnLocation = useCallback(
         (
@@ -300,6 +453,15 @@ export const Map = () => {
 
     const updateCoverageHint = useCallback(() => {
         const map = mapRef.current;
+
+        if (!isSessionActive) {
+            setPanoramaMarkerState({
+                message:
+                    'Нажми "Начать игру", чтобы получить задания и начать поиск предметов.',
+                status: 'idle',
+            });
+            return;
+        }
 
         if (!accessToken) {
             setPanoramaMarkerState({
@@ -336,7 +498,127 @@ export const Map = () => {
                 'На этом зуме доступны точные pano-точки. Кликни по зелёной точке или линии.',
             status: 'ready',
         });
-    }, [accessToken]);
+    }, [accessToken, isSessionActive]);
+
+    const handleStartGame = useCallback(() => {
+        void (async () => {
+            try {
+                const startedSession = await startSoloGameSession().unwrap();
+
+                resetSelection();
+                resetSelectedSpot();
+                setCompletedSession(null);
+                setIsResultsOpen(false);
+                setSessionSnapshot(startedSession);
+                setSelectedTaskId(
+                    getFirstPendingTask(startedSession)?.id ?? null
+                );
+                window.setTimeout(() => {
+                    updateCoverageHint();
+                }, 0);
+
+                toaster.create({
+                    title: 'Игра началась',
+                    description:
+                        'Сессия создана. Открой панораму и начни искать предметы.',
+                    type: 'success',
+                });
+            } catch (error) {
+                const queryError = error as FetchBaseQueryError;
+                const errorDescription =
+                    'status' in queryError
+                        ? `Backend returned ${String(queryError.status)}.`
+                        : 'Unexpected client-side error.';
+
+                toaster.create({
+                    title: 'Не удалось начать игру',
+                    description:
+                        error instanceof Error
+                            ? error.message
+                            : errorDescription,
+                    type: 'error',
+                });
+            }
+        })();
+    }, [
+        resetSelectedSpot,
+        resetSelection,
+        startSoloGameSession,
+        updateCoverageHint,
+    ]);
+
+    const handleCompleteTaskForDebug = useCallback(
+        (taskId: string) => {
+            if (!isDebugMode || !session) {
+                return;
+            }
+
+            setDebugCompletingTaskId(taskId);
+
+            void (async () => {
+                try {
+                    const updatedSession = await completeGameTaskForDebug({
+                        sessionId: session.id,
+                        sessionTaskId: taskId,
+                    }).unwrap();
+
+                    setSessionSnapshot(updatedSession);
+
+                    if (updatedSession.status === 'COMPLETED') {
+                        setCompletedSession(updatedSession);
+                        setIsResultsOpen(true);
+                    }
+
+                    toaster.create({
+                        title: 'Debug: задание завершено',
+                        description: 'Задание помечено выполненным на backend.',
+                        type: 'info',
+                    });
+                } catch (error) {
+                    const queryError = error as FetchBaseQueryError;
+                    const errorDescription =
+                        'status' in queryError
+                            ? `Backend returned ${String(queryError.status)}.`
+                            : 'Unexpected client-side error.';
+
+                    toaster.create({
+                        title: 'Debug completion failed',
+                        description:
+                            error instanceof Error
+                                ? error.message
+                                : errorDescription,
+                        type: 'error',
+                    });
+                } finally {
+                    setDebugCompletingTaskId(null);
+                }
+            })();
+        },
+        [completeGameTaskForDebug, isDebugMode, session]
+    );
+
+    useEffect(() => {
+        if (autoStartHandledRef.current || !shouldAutoStartSolo) {
+            return;
+        }
+
+        if (isActiveSessionFetching) {
+            return;
+        }
+
+        if (session?.status === 'ACTIVE') {
+            autoStartHandledRef.current = true;
+            return;
+        }
+
+        autoStartHandledRef.current = true;
+        handleStartGame();
+    }, [
+        handleStartGame,
+        isActiveSessionFetching,
+        session,
+        shouldAutoStartSolo,
+    ]);
 
     useEffect(() => {
         if (!mapContainerRef.current || mapRef.current) {
@@ -344,10 +626,10 @@ export const Map = () => {
         }
 
         const map = new maplibregl.Map({
-            container: mapContainerRef.current,
             center: DEFAULT_MAP_CENTER,
-            zoom: DEFAULT_MAP_ZOOM,
+            container: mapContainerRef.current,
             style: MAP_STYLE_URL,
+            zoom: DEFAULT_MAP_ZOOM,
         });
 
         map.addControl(new maplibregl.NavigationControl(), 'top-right');
@@ -357,7 +639,7 @@ export const Map = () => {
                 features?: maplibregl.MapGeoJSONFeature[];
             }
         ) => {
-            if (isMapDraggingRef.current) {
+            if (!isSessionActiveRef.current || isMapDraggingRef.current) {
                 return;
             }
 
@@ -406,7 +688,9 @@ export const Map = () => {
         const registerInteractiveLayer = (layerId: string) => {
             map.on('click', layerId, handleCoverageClick);
             map.on('mouseenter', layerId, () => {
-                map.getCanvas().style.cursor = 'pointer';
+                map.getCanvas().style.cursor = isSessionActiveRef.current
+                    ? 'pointer'
+                    : '';
             });
             map.on('mouseleave', layerId, () => {
                 map.getCanvas().style.cursor = '';
@@ -420,43 +704,41 @@ export const Map = () => {
             }
 
             map.addSource(MAPILLARY_TILE_SOURCE_ID, {
-                type: 'vector',
-                tiles: [`${MAPILLARY_TILE_URL}${accessToken}`],
-                minzoom: 0,
                 maxzoom: 14,
+                minzoom: 0,
+                tiles: [`${MAPILLARY_TILE_URL}${accessToken}`],
+                type: 'vector',
             });
 
             map.addLayer({
+                filter: ['==', ['get', 'is_pano'], true],
                 id: MAPILLARY_OVERVIEW_LAYER_ID,
-                type: 'circle',
+                maxzoom: 6,
+                minzoom: 0,
+                paint: {
+                    'circle-color': '#22c55e',
+                    'circle-opacity': 0.9,
+                    'circle-radius': 3,
+                    'circle-stroke-color': '#f8fafc',
+                    'circle-stroke-width': 1,
+                },
                 source: MAPILLARY_TILE_SOURCE_ID,
                 'source-layer': 'overview',
-                minzoom: 0,
-                maxzoom: 6,
-                filter: ['==', ['get', 'is_pano'], true],
-                paint: {
-                    'circle-radius': 3,
-                    'circle-color': '#22c55e',
-                    'circle-stroke-width': 1,
-                    'circle-stroke-color': '#f8fafc',
-                    'circle-opacity': 0.9,
-                },
+                type: 'circle',
             });
 
             map.addLayer({
-                id: MAPILLARY_SEQUENCE_LAYER_ID,
-                type: 'line',
-                source: MAPILLARY_TILE_SOURCE_ID,
-                'source-layer': 'sequence',
-                minzoom: 6,
-                maxzoom: 14,
                 filter: ['==', ['get', 'is_pano'], true],
+                id: MAPILLARY_SEQUENCE_LAYER_ID,
                 layout: {
                     'line-cap': 'round',
                     'line-join': 'round',
                 },
+                maxzoom: 14,
+                minzoom: 6,
                 paint: {
                     'line-color': '#16a34a',
+                    'line-opacity': 0.85,
                     'line-width': [
                         'interpolate',
                         ['linear'],
@@ -466,24 +748,26 @@ export const Map = () => {
                         14,
                         5,
                     ],
-                    'line-opacity': 0.85,
                 },
+                source: MAPILLARY_TILE_SOURCE_ID,
+                'source-layer': 'sequence',
+                type: 'line',
             });
 
             map.addLayer({
+                filter: ['==', ['get', 'is_pano'], true],
                 id: MAPILLARY_IMAGE_LAYER_ID,
-                type: 'circle',
+                minzoom: 14,
+                paint: {
+                    'circle-color': '#22c55e',
+                    'circle-opacity': 0.95,
+                    'circle-radius': 4,
+                    'circle-stroke-color': '#f8fafc',
+                    'circle-stroke-width': 1.5,
+                },
                 source: MAPILLARY_TILE_SOURCE_ID,
                 'source-layer': 'image',
-                minzoom: 14,
-                filter: ['==', ['get', 'is_pano'], true],
-                paint: {
-                    'circle-radius': 4,
-                    'circle-color': '#22c55e',
-                    'circle-stroke-width': 1.5,
-                    'circle-stroke-color': '#f8fafc',
-                    'circle-opacity': 0.95,
-                },
+                type: 'circle',
             });
 
             registerInteractiveLayer(MAPILLARY_OVERVIEW_LAYER_ID);
@@ -503,7 +787,7 @@ export const Map = () => {
         });
 
         map.on('click', (event) => {
-            if (isMapDraggingRef.current) {
+            if (!isSessionActiveRef.current || isMapDraggingRef.current) {
                 return;
             }
 
@@ -536,21 +820,27 @@ export const Map = () => {
             mapRef.current = null;
         };
     }, [
+        accessToken,
         focusMapOnLocation,
         resetSelection,
         selectLocation,
         selectScene,
         updateCoverageHint,
         updateSelectedMarker,
-        accessToken,
     ]);
 
     useEffect(() => {
-        if (!selectedLocation) {
-            return;
-        }
+        const timeoutId = window.setTimeout(() => {
+            updateCoverageHint();
+        }, 0);
 
-        if (!mapContainerRef.current || !mapRef.current || !selectedLocation) {
+        return () => {
+            window.clearTimeout(timeoutId);
+        };
+    }, [updateCoverageHint]);
+
+    useEffect(() => {
+        if (!selectedLocation) {
             return;
         }
 
@@ -620,22 +910,35 @@ export const Map = () => {
 
     return (
         <Box position="relative" flex={1} minH="100vh" bg="gray.950">
+            <GameResultsDialog
+                isOpen={isResultsOpen}
+                session={completedSession}
+                onGoHome={() => navigate('/home')}
+                onRestart={handleStartGame}
+                isRestarting={isStartingGame}
+            />
+
             <Box
                 position="absolute"
                 inset={0}
-                zIndex={hasSelectedSpot ? 1 : 3}
-                borderRadius={hasSelectedSpot ? '2xl' : 'none'}
+                zIndex={shouldKeepPanoramaVisible ? 1 : 3}
+                borderRadius={shouldKeepPanoramaVisible ? '2xl' : 'none'}
                 overflow="hidden"
                 bg="gray.900"
-                opacity={hasSelectedSpot ? 1 : 0}
-                pointerEvents={hasSelectedSpot ? 'auto' : 'none'}
+                opacity={shouldKeepPanoramaVisible ? 1 : 0}
+                pointerEvents={shouldKeepPanoramaVisible ? 'auto' : 'none'}
             >
                 <Box ref={viewerContainerRef} h="full" w="full" />
                 <ViewerSelectionLayer
                     draftSelection={draftSelection}
                     isInteractive={isSelectionMode && canDrawSelection}
+                    selectedTaskId={activeTask?.id ?? null}
                     selectionPayload={selectionPayload}
                     selectionLayerRef={selectionLayerRef}
+                    taskOptions={availableTaskOptions}
+                    onChangeTask={(taskId) => {
+                        setSelectedTaskId(taskId);
+                    }}
                     onResetSelection={resetSelection}
                     onSubmitSelection={submitSelection}
                     onPointerDown={handleSelectionPointerDown}
@@ -652,23 +955,25 @@ export const Map = () => {
 
             <Box
                 position="absolute"
-                left={hasSelectedSpot ? { base: 4, xl: 6 } : 0}
-                bottom={hasSelectedSpot ? { base: 4, xl: 6 } : 'auto'}
-                top={hasSelectedSpot ? 'auto' : 0}
-                insetInlineEnd={hasSelectedSpot ? 'auto' : 0}
-                zIndex={hasSelectedSpot ? 4 : 2}
-                w={hasSelectedSpot ? { base: '600px' } : '100%'}
-                h={hasSelectedSpot ? { base: '400px' } : '100%'}
-                borderRadius={hasSelectedSpot ? '2xl' : 'none'}
+                left={shouldKeepPanoramaVisible ? { base: 4, xl: 6 } : 0}
+                bottom={shouldKeepPanoramaVisible ? { base: 4, xl: 6 } : 'auto'}
+                top={shouldKeepPanoramaVisible ? 'auto' : 0}
+                insetInlineEnd={shouldKeepPanoramaVisible ? 'auto' : 0}
+                zIndex={shouldKeepPanoramaVisible ? 4 : 2}
+                w={shouldKeepPanoramaVisible ? { base: '600px' } : '100%'}
+                h={shouldKeepPanoramaVisible ? { base: '400px' } : '100%'}
+                borderRadius={shouldKeepPanoramaVisible ? '2xl' : 'none'}
                 overflow="hidden"
                 bg="white"
-                boxShadow={hasSelectedSpot ? '2xl' : 'none'}
-                borderWidth={hasSelectedSpot ? '1px' : '0'}
-                borderColor={hasSelectedSpot ? 'whiteAlpha.400' : 'transparent'}
+                boxShadow={shouldKeepPanoramaVisible ? '2xl' : 'none'}
+                borderWidth={shouldKeepPanoramaVisible ? '1px' : '0'}
+                borderColor={
+                    shouldKeepPanoramaVisible ? 'whiteAlpha.400' : 'transparent'
+                }
                 transition="all 0.35s ease"
             >
                 <Box ref={mapContainerRef} h="full" w="full" />
-                {!hasSelectedSpot && (
+                {(!isSessionActive || !hasSelectedSpot) && (
                     <Box
                         position="absolute"
                         right={3}
@@ -678,29 +983,20 @@ export const Map = () => {
                         px={3}
                         py={2.5}
                         borderRadius="xl"
-                        bg="#171923"
+                        bg="blackAlpha.700"
                         color="white"
-                        borderWidth="1px"
-                        borderColor="whiteAlpha.200"
-                        boxShadow="lg"
                     >
-                        <Text fontWeight="700" fontSize="sm">
-                            Точки панорам
+                        <Text fontWeight="700">
+                            {isSessionActive
+                                ? 'Карта готова к поиску'
+                                : 'Одиночный режим ещё не начат'}
                         </Text>
-                        <Text
-                            mt={1}
-                            fontSize="sm"
-                            color={
-                                panoramaMarkerState.status === 'error'
-                                    ? 'red.200'
-                                    : 'whiteAlpha.900'
-                            }
-                        >
+                        <Text fontSize="sm" color="whiteAlpha.800">
                             {panoramaMarkerState.message}
                         </Text>
                     </Box>
                 )}
-                {hasSelectedSpot && (
+                {shouldKeepPanoramaVisible && (
                     <IconButton
                         aria-label="Открыть карту на весь экран"
                         position="absolute"
@@ -722,29 +1018,51 @@ export const Map = () => {
 
             <Box
                 position="absolute"
-                top={{ base: 4, xl: 6 }}
-                left={{ base: 4, xl: 6 }}
-                zIndex={5}
-                w={{ base: 'calc(100% - 32px)', md: '360px' }}
+                top={4}
+                left={4}
+                zIndex={6}
+                maxW="calc(100% - 2rem)"
             >
                 <GameSidebar
+                    activeTask={activeTask}
+                    debugCompletingTaskId={debugCompletingTaskId}
                     hasSelectedSpot={hasSelectedSpot}
-                    isViewerLoading={resolvedViewerState.isLoading}
-                    panoramaAddress={resolvedViewerState.panoramaAddress}
-                    task={CURRENT_GAME_TASK}
+                    isStartingGame={isStartingGame}
+                    isDebugMode={isDebugMode}
+                    session={session}
+                    onCompleteTaskForDebug={handleCompleteTaskForDebug}
                 />
             </Box>
 
-            {hasSelectedSpot && (
+            {resolvedViewerState.panoramaAddress && (
+                <HStack
+                    position="absolute"
+                    top={4}
+                    right={4}
+                    zIndex={8}
+                    px={3}
+                    py={2}
+                    borderRadius="lg"
+                    bg="blackAlpha.700"
+                    color="white"
+                    maxW={{
+                        base: 'calc(100% - 2rem)',
+                        md: '560px',
+                    }}
+                    pointerEvents="auto"
+                >
+                    <Text fontWeight="600" fontSize="lg" lineClamp={1}>
+                        {resolvedViewerState.panoramaAddress}
+                    </Text>
+                    {resolvedViewerState.isLoading && <Spinner size="sm" />}
+                </HStack>
+            )}
+
+            {shouldKeepPanoramaVisible && (
                 <ActionBar.Root open>
                     <Portal>
                         <ActionBar.Positioner pb={4} zIndex={30}>
-                            <ActionBar.Content
-                                // bg="red.950"
-                                // borderColor="red.800"
-                                color="white"
-                                boxShadow="2xl"
-                            >
+                            <ActionBar.Content color="white" boxShadow="2xl">
                                 <Tooltip
                                     showArrow
                                     positioning={{
