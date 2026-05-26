@@ -43,6 +43,9 @@ export const GameResultsDialog = ({
                                     Всего попыток проверки:{' '}
                                     {session?.attemptsCount ?? 0}
                                 </Text>
+                                <Text color="gray.600">
+                                    Получено опыта: {session?.awardedXp ?? 0} XP
+                                </Text>
                             </VStack>
                         </Dialog.Body>
                         <Dialog.Footer>

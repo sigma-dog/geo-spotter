@@ -13,12 +13,15 @@ export type GameTask = {
     title: string;
     description: string | null;
     target: string;
+    difficulty?: 'EASY' | 'MEDIUM' | 'HARD' | 'LEGENDARY';
     orderIndex?: number;
     status?: 'PENDING' | 'COMPLETED';
     completedAt?: string | null;
+    xpReward?: number;
 };
 
 export type GameSession = {
+    awardedXp: number;
     id: string;
     mode: 'SOLO' | 'MULTIPLAYER';
     status: 'ACTIVE' | 'COMPLETED' | 'ABANDONED';
@@ -129,7 +132,10 @@ export type SelectionVerificationVerdict = 'match' | 'no_match' | 'uncertain';
 
 export type SelectionVerificationResult = {
     attemptId: string;
+    awardedXp?: number;
     confidence: number;
+    currentLevel?: number;
+    currentXp?: number;
     reason: string;
     sessionCompleted?: boolean;
     source: 'mock' | 'ai';

@@ -5,7 +5,7 @@ import type {
 } from 'pages/game/lib/types';
 
 import { api } from '../api';
-import { apiMethods } from '../constants';
+import { apiMethods, tagTypes } from '../constants';
 
 const gameApi = api.injectEndpoints({
     endpoints: (build) => ({
@@ -17,6 +17,7 @@ const gameApi = api.injectEndpoints({
                 url: `/game/debug/sessions/${sessionId}/tasks/${sessionTaskId}/complete`,
                 method: apiMethods.post,
             }),
+            invalidatesTags: [tagTypes.CurrentUser],
         }),
         getActiveGameSession: build.query<GameSession | null, void>({
             query: () => ({
@@ -39,6 +40,7 @@ const gameApi = api.injectEndpoints({
                 method: apiMethods.post,
                 body,
             }),
+            invalidatesTags: [tagTypes.CurrentUser],
         }),
     }),
 });

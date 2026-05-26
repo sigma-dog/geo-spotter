@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import type { GameSession, Prisma } from '../../generated/prisma/client';
 import {
+    Difficulty,
     GameSessionMode,
     GameSessionStatus,
     GameSessionTaskStatus,
@@ -15,9 +16,11 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { SubmitSelectionDto } from './dto/submit-selection.dto';
 import {
+    GAME_TASK_DIFFICULTY,
     SOLO_GAME_TASK_COUNT,
     SOLO_GAME_TASK_POOL,
     TASK_ATTEMPT_VERDICT,
+    USER_XP_PER_LEVEL,
 } from './game.constants';
 import { GameAiClientService } from './game-ai-client.service';
 import { GameDebugService } from './game-debug.service';
@@ -80,23 +83,37 @@ export class GameService {
                         where: { externalId: task.externalId },
                         create: {
                             description: task.description,
+                            difficulty: task.difficulty,
                             externalId: task.externalId,
                             target: task.target,
                             title: task.title,
+                            xpReward: task.xpReward,
                         },
                         update: {
                             description: task.description,
+                            difficulty: task.difficulty,
                             target: task.target,
                             title: task.title,
+                            xpReward: task.xpReward,
                         },
                     })
                 )
             );
 
-            const selectedTasks = this.shuffle(taskRecords).slice(
-                0,
-                SOLO_GAME_TASK_COUNT
-            );
+            const selectedTasks = [
+                this.pickRandomTaskByDifficulty(
+                    taskRecords,
+                    GAME_TASK_DIFFICULTY.easy
+                ),
+                this.pickRandomTaskByDifficulty(
+                    taskRecords,
+                    GAME_TASK_DIFFICULTY.medium
+                ),
+                this.pickRandomTaskByDifficulty(
+                    taskRecords,
+                    GAME_TASK_DIFFICULTY.hard
+                ),
+            ].slice(0, SOLO_GAME_TASK_COUNT);
             const createdSession = await tx.gameSession.create({
                 data: {
                     mode: GameSessionMode.SOLO,
@@ -187,6 +204,7 @@ export class GameService {
             sessionId: session.id,
             sessionMode: session.mode,
             sessionTaskId: sessionTask.id,
+            userId,
         });
 
         const updatedSession = await this.prismaService.gameSession.findUnique({
@@ -320,6 +338,9 @@ export class GameService {
 
             let taskCompleted = false;
             let sessionCompleted = false;
+            let awardedXp = 0;
+            let currentLevel: number | undefined;
+            let currentXp: number | undefined;
 
             if (verification.verdict === TASK_ATTEMPT_VERDICT.match) {
                 const completionState = await this.completeMatchedTask({
@@ -327,15 +348,22 @@ export class GameService {
                     sessionId: session.id,
                     sessionMode: session.mode,
                     sessionTaskId: sessionTask.id,
+                    userId,
                 });
 
+                awardedXp = completionState.awardedXp;
+                currentLevel = completionState.currentLevel;
+                currentXp = completionState.currentXp;
                 taskCompleted = completionState.taskCompleted;
                 sessionCompleted = completionState.sessionCompleted;
             }
 
             return {
                 attemptId: attempt.id,
+                awardedXp,
                 confidence: verification.confidence,
+                currentLevel,
+                currentXp,
                 debug: verification.debug ?? null,
                 reason: verification.reason,
                 sessionCompleted,
@@ -370,6 +398,7 @@ export class GameService {
         sessionId: string;
         sessionMode: GameSession['mode'];
         sessionTaskId: string;
+        userId: string;
     }) {
         return this.prismaService.$transaction(async (tx) => {
             const task = await tx.gameSessionTask.findUnique({
@@ -377,6 +406,11 @@ export class GameService {
                     id: params.sessionTaskId,
                 },
                 select: {
+                    gameTask: {
+                        select: {
+                            xpReward: true,
+                        },
+                    },
                     status: true,
                 },
             });
@@ -387,6 +421,9 @@ export class GameService {
 
             if (task.status === GameSessionTaskStatus.COMPLETED) {
                 return {
+                    awardedXp: 0,
+                    currentLevel: undefined,
+                    currentXp: undefined,
                     sessionCompleted: false,
                     taskCompleted: false,
                 };
@@ -400,6 +437,35 @@ export class GameService {
                     completedAt: new Date(),
                     completedByAttemptId: params.attemptId ?? null,
                     status: GameSessionTaskStatus.COMPLETED,
+                },
+            });
+
+            const user = await tx.user.findUnique({
+                where: {
+                    id: params.userId,
+                },
+                select: {
+                    xp: true,
+                },
+            });
+
+            if (!user) {
+                throw new NotFoundException(
+                    `Пользователь с id ${params.userId} не найден.`
+                );
+            }
+
+            const awardedXp = task.gameTask.xpReward;
+            const nextXp = user.xp + awardedXp;
+            const nextLevel = this.calculateLevel(nextXp);
+
+            await tx.user.update({
+                where: {
+                    id: params.userId,
+                },
+                data: {
+                    level: nextLevel,
+                    xp: nextXp,
                 },
             });
 
@@ -427,6 +493,9 @@ export class GameService {
             }
 
             return {
+                awardedXp,
+                currentLevel: nextLevel,
+                currentXp: nextXp,
                 sessionCompleted: shouldCompleteSession,
                 taskCompleted: true,
             };
@@ -488,9 +557,13 @@ export class GameService {
         const completedTasksCount = session.gameSessionTasks.filter(
             (task) => task.status === GameSessionTaskStatus.COMPLETED
         ).length;
+        const awardedXp = session.gameSessionTasks
+            .filter((task) => task.status === GameSessionTaskStatus.COMPLETED)
+            .reduce((total, task) => total + task.gameTask.xpReward, 0);
 
         return {
             attemptsCount: session._count.tasks,
+            awardedXp,
             completedTasksCount,
             finishedAt: session.finishedAt?.toISOString() ?? null,
             id: session.id,
@@ -500,11 +573,13 @@ export class GameService {
             tasks: session.gameSessionTasks.map((task) => ({
                 completedAt: task.completedAt?.toISOString() ?? null,
                 description: task.gameTask.description,
+                difficulty: task.gameTask.difficulty,
                 id: task.id,
                 orderIndex: task.orderIndex,
                 status: task.status,
                 target: task.gameTask.target,
                 title: task.gameTask.title,
+                xpReward: task.gameTask.xpReward,
             })),
             totalTasksCount: session.gameSessionTasks.length,
         };
@@ -553,5 +628,34 @@ export class GameService {
         }
 
         return nextItems;
+    }
+
+    private pickRandomTaskByDifficulty<T extends { difficulty: Difficulty }>(
+        tasks: T[],
+        difficulty: Difficulty
+    ) {
+        const matchingTasks = tasks.filter(
+            (task) => task.difficulty === difficulty
+        );
+
+        if (matchingTasks.length === 0) {
+            throw new InternalServerErrorException(
+                `Не найдено игровых заданий сложности ${difficulty}.`
+            );
+        }
+
+        const [randomTask] = this.shuffle(matchingTasks);
+
+        if (!randomTask) {
+            throw new InternalServerErrorException(
+                `Не удалось выбрать игровое задание сложности ${difficulty}.`
+            );
+        }
+
+        return randomTask;
+    }
+
+    private calculateLevel(xp: number) {
+        return Math.floor(xp / USER_XP_PER_LEVEL);
     }
 }

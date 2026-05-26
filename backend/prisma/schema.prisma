@@ -102,6 +102,8 @@ model GameTask {
   title       String
   description String?
   target      String
+  difficulty  Difficulty @default(EASY)
+  xpReward    Int        @default(0) @map("xp_reward")
 
   attempts TaskAttempt[]
   sessionTasks GameSessionTask[]

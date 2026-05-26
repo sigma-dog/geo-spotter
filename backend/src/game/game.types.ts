@@ -2,7 +2,10 @@ export type VerificationVerdict = 'match' | 'no_match' | 'uncertain';
 
 export type VerificationResponse = {
     attemptId: string;
+    awardedXp?: number;
     confidence: number;
+    currentLevel?: number;
+    currentXp?: number;
     debug?: Record<string, unknown> | null;
     reason: string;
     source: 'mock' | 'ai';
@@ -46,15 +49,18 @@ export type AiVerificationResponse = Omit<VerificationResponse, 'attemptId'>;
 
 export type GameSessionTaskView = {
     id: string;
+    difficulty: 'EASY' | 'MEDIUM' | 'HARD' | 'LEGENDARY';
     title: string;
     description: string | null;
     target: string;
     orderIndex: number;
     status: 'PENDING' | 'COMPLETED';
     completedAt: string | null;
+    xpReward: number;
 };
 
 export type GameSessionView = {
+    awardedXp: number;
     id: string;
     mode: 'SOLO' | 'MULTIPLAYER';
     status: 'ACTIVE' | 'COMPLETED' | 'ABANDONED';

@@ -108,6 +108,7 @@ const applySelectionResultToSession = (
     const nextSession: GameSession = {
         ...session,
         attemptsCount: session.attemptsCount + 1,
+        awardedXp: session.awardedXp + (result.awardedXp ?? 0),
     };
 
     if (
@@ -318,7 +319,11 @@ export const Map = () => {
                                 : result.verdict === 'no_match'
                                   ? 'Объект не подошел'
                                   : 'Нужна дополнительная проверка',
-                        description: result.reason,
+                        description:
+                            result.verdict === 'match' &&
+                            (result.awardedXp ?? 0) > 0
+                                ? `${result.reason} Получено ${result.awardedXp} XP.`
+                                : result.reason,
                         type:
                             result.verdict === 'match'
                                 ? 'success'
@@ -1025,6 +1030,7 @@ export const Map = () => {
             >
                 <GameSidebar
                     activeTask={activeTask}
+                    currentUser={currentUser ?? null}
                     debugCompletingTaskId={debugCompletingTaskId}
                     hasSelectedSpot={hasSelectedSpot}
                     isStartingGame={isStartingGame}

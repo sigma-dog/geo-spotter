@@ -10,6 +10,7 @@ import {
 } from '@chakra-ui/react';
 
 import { useGetCurrentUserDataQuery } from 'shared/api/currentUser';
+import { getUserLevelProgress } from 'shared/lib';
 
 import { ProfileMenu } from './ProfileMenu';
 
@@ -19,6 +20,9 @@ type ProfileInfoProps = {
 
 export const ProfileInfo: FC<ProfileInfoProps> = ({ openEditProfilePanel }) => {
     const { data, isLoading } = useGetCurrentUserDataQuery();
+    const levelProgress = data
+        ? getUserLevelProgress(data.xp, data.level)
+        : null;
 
     return (
         <Flex
@@ -61,7 +65,8 @@ export const ProfileInfo: FC<ProfileInfoProps> = ({ openEditProfilePanel }) => {
                     </Flex>
 
                     <Progress.Root
-                        defaultValue={40}
+                        value={levelProgress?.progressPercent ?? 0}
+                        max={100}
                         maxW="sm"
                         striped
                         colorPalette="red"
@@ -84,16 +89,7 @@ export const ProfileInfo: FC<ProfileInfoProps> = ({ openEditProfilePanel }) => {
                                     alignItems="center"
                                 >
                                     <Progress.Track flex="1">
-                                        <Progress.Range>
-                                            {/* <Text
-                                        position="absolute"
-                                        right={-2}
-                                        bottom={-6}
-                                        fontSize="smaller"
-                                    >
-                                        {xp} XP
-                                    </Text> */}
-                                        </Progress.Range>
+                                        <Progress.Range />
                                     </Progress.Track>
                                 </HStack>
 
@@ -102,8 +98,13 @@ export const ProfileInfo: FC<ProfileInfoProps> = ({ openEditProfilePanel }) => {
                                     justifyContent="space-between"
                                     alignItems="center"
                                 >
-                                    <Text fontSize="smaller">{data.xp} XP</Text>
-                                    <Text fontSize="smaller">{data.xp} XP</Text>
+                                    <Text fontSize="smaller">
+                                        {levelProgress?.currentLevelXp ?? 0} XP
+                                    </Text>
+                                    <Text fontSize="smaller">
+                                        {data.xp} /{' '}
+                                        {levelProgress?.nextLevelXp ?? 0} XP
+                                    </Text>
                                 </HStack>
                             </VStack>
                         </VStack>

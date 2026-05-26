@@ -31,69 +31,100 @@ export const GAME_SESSION_TASK_STATUS = {
     pending: 'PENDING',
 } as const;
 
+export const GAME_TASK_DIFFICULTY = {
+    easy: 'EASY',
+    hard: 'HARD',
+    medium: 'MEDIUM',
+} as const;
+
+export const GAME_TASK_XP_REWARD = {
+    easy: 10,
+    hard: 40,
+    medium: 25,
+} as const;
+
+export const USER_XP_PER_LEVEL = 100;
+
 export const SOLO_GAME_TASK_POOL = [
     {
-        externalId: 'solo-backpack',
-        title: 'Найди рюкзак',
-        description:
-            'Подойдут рюкзаки, ранцы или похожие сумки, которые видны достаточно отчётливо.',
-        target: 'Рюкзак',
-    },
-    {
-        externalId: 'solo-bicycle',
-        title: 'Найди велосипед',
         description:
             'Ищи припаркованные или едущие велосипеды, которые заметны в кадре.',
+        difficulty: GAME_TASK_DIFFICULTY.easy,
+        externalId: 'solo-bicycle-easy',
         target: 'Велосипед',
+        title: 'Найди велосипед',
+        xpReward: GAME_TASK_XP_REWARD.easy,
     },
     {
-        externalId: 'solo-bench',
-        title: 'Найди скамейку',
         description:
-            'Подойдёт уличная скамейка или лавочка, если она хорошо читается в выделении.',
-        target: 'Скамейка',
-    },
-    {
-        externalId: 'solo-bus',
-        title: 'Найди автобус',
-        description:
-            'Подходит городской, междугородний или школьный автобус, если он попал в рамку целиком или крупно.',
+            'Подходит городской или междугородний автобус, если он читается достаточно уверенно.',
+        difficulty: GAME_TASK_DIFFICULTY.easy,
+        externalId: 'solo-bus-easy',
         target: 'Автобус',
+        title: 'Найди автобус',
+        xpReward: GAME_TASK_XP_REWARD.easy,
     },
     {
-        externalId: 'solo-fire-hydrant',
-        title: 'Найди пожарный гидрант',
         description:
-            'Ищи гидранты на тротуарах и у дорог. Лучше выделять объект плотно, без лишнего фона.',
-        target: 'Пожарный гидрант',
+            'Подойдёт легковой автомобиль, если он хорошо виден в рамке.',
+        difficulty: GAME_TASK_DIFFICULTY.easy,
+        externalId: 'solo-car-easy',
+        target: 'Машина',
+        title: 'Найди машину',
+        xpReward: GAME_TASK_XP_REWARD.easy,
     },
     {
-        externalId: 'solo-motorcycle',
-        title: 'Найди мотоцикл',
         description:
-            'Подойдут мотоциклы, скутеры и похожий мототранспорт, если они хорошо видны в кадре.',
-        target: 'Мотоцикл',
+            'Нужен велосипед с хорошо различимым синим цветом рамы или основных элементов.',
+        difficulty: GAME_TASK_DIFFICULTY.medium,
+        externalId: 'solo-bicycle-blue-medium',
+        target: 'Синий велосипед',
+        title: 'Найди синий велосипед',
+        xpReward: GAME_TASK_XP_REWARD.medium,
     },
     {
-        externalId: 'solo-traffic-light',
-        title: 'Найди светофор',
         description:
-            'Ищи уличные светофоры. Лучше не брать слишком далёкие объекты.',
-        target: 'Светофор',
+            'Ищи автобус, в котором красный цвет хорошо виден на корпусе.',
+        difficulty: GAME_TASK_DIFFICULTY.medium,
+        externalId: 'solo-bus-red-medium',
+        target: 'Красный автобус',
+        title: 'Найди красный автобус',
+        xpReward: GAME_TASK_XP_REWARD.medium,
     },
     {
-        externalId: 'solo-trash-can',
-        title: 'Найди урну',
-        description:
-            'Подойдут уличные мусорные урны и контейнеры небольшого размера.',
-        target: 'Урна',
+        description: 'Подойдёт автомобиль с заметным жёлтым цветом кузова.',
+        difficulty: GAME_TASK_DIFFICULTY.medium,
+        externalId: 'solo-car-yellow-medium',
+        target: 'Желтая машина',
+        title: 'Найди желтую машину',
+        xpReward: GAME_TASK_XP_REWARD.medium,
     },
     {
-        externalId: 'solo-stop-sign',
-        title: 'Найди дорожный знак',
         description:
-            'Подходит крупный дорожный знак, если его форма и стойка различимы.',
-        target: 'Дорожный знак',
+            'Ищи редкий оранжевый грузовик. Лучше брать крупный и чисто видимый объект.',
+        difficulty: GAME_TASK_DIFFICULTY.hard,
+        externalId: 'solo-truck-orange-hard',
+        target: 'Оранжевый грузовик',
+        title: 'Найди оранжевый грузовик',
+        xpReward: GAME_TASK_XP_REWARD.hard,
+    },
+    {
+        description:
+            'Подойдёт белый фургон, если цвет корпуса и тип транспорта читаются без сомнений.',
+        difficulty: GAME_TASK_DIFFICULTY.hard,
+        externalId: 'solo-van-white-hard',
+        target: 'Белый фургон',
+        title: 'Найди белый фургон',
+        xpReward: GAME_TASK_XP_REWARD.hard,
+    },
+    {
+        description:
+            'Нужен мотоцикл с выраженным зелёным цветом. Лучше выделять объект плотно.',
+        difficulty: GAME_TASK_DIFFICULTY.hard,
+        externalId: 'solo-motorcycle-green-hard',
+        target: 'Зеленый мотоцикл',
+        title: 'Найди зеленый мотоцикл',
+        xpReward: GAME_TASK_XP_REWARD.hard,
     },
 ] as const;
 
