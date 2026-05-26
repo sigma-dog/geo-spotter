@@ -2,37 +2,30 @@ import { LuArrowLeft } from 'react-icons/lu';
 import { useNavigate } from 'react-router-dom';
 import { Box, Button, HStack, Spinner, Text, VStack } from '@chakra-ui/react';
 
-import type { MockPanoramaSpot } from '../lib/types';
+import type { GameTask } from '../lib/types';
 
 type GameSidebarProps = {
-    activeSpotId: string;
-    activeSpotTarget: string;
-    activeSpotDescription: string;
     hasSelectedSpot: boolean;
-    spots: MockPanoramaSpot[];
-    onSelectSpot: (spot: MockPanoramaSpot) => void;
+    panoramaAddress: string | null;
     isViewerLoading: boolean;
-    spotTitle: string;
+    task: GameTask;
 };
 
 export const GameSidebar = ({
-    activeSpotId,
-    activeSpotTarget,
-    activeSpotDescription,
     hasSelectedSpot,
-    spots,
-    onSelectSpot,
+    panoramaAddress,
     isViewerLoading,
-    spotTitle,
+    task,
 }: GameSidebarProps) => {
     const navigate = useNavigate();
 
     return (
-        <HStack align="flex-start">
+        <HStack align="flex-start" w="auto" maxW="100%">
             <VStack
                 align="stretch"
                 gap={4}
-                w={{ base: 'full', xl: '360px' }}
+                minW="360px"
+                maxW="100%"
                 p={5}
                 borderRadius="2xl"
                 bg="white"
@@ -59,39 +52,19 @@ export const GameSidebar = ({
                     </Text>
                     <Text fontSize="xl" fontWeight="700" color="red.700">
                         {hasSelectedSpot
-                            ? `Найти: ${activeSpotTarget}`
-                            : 'Выбери точку на карте'}
+                            ? `Найти: ${task.target}`
+                            : 'Выбери любую точку на карте'}
                     </Text>
                     <Text mt={2} color="gray.600">
                         {hasSelectedSpot
-                            ? activeSpotDescription
-                            : 'Сначала открой одну из моковых локаций из списка ' +
-                              'или кликни по карте. После этого панорама ' +
-                              'развернется на весь экран.'}
+                            ? task.description
+                            : 'После начала игры карта полностью свободна: ' +
+                              'кликни в любое место, и мы попробуем открыть ближайшую панораму Mapillary.'}
                     </Text>
                 </Box>
-
-                <VStack align="stretch" gap={3}>
-                    {spots.map((spot, index) => (
-                        <Button
-                            key={spot.id}
-                            justifyContent="flex-start"
-                            variant={
-                                spot.id === activeSpotId ? 'solid' : 'subtle'
-                            }
-                            colorPalette={
-                                spot.id === activeSpotId ? 'red' : 'gray'
-                            }
-                            onClick={() => onSelectSpot(spot)}
-                        >
-                            {index + 1}. {spot.title}
-                        </Button>
-                    ))}
-                </VStack>
             </VStack>
 
             <HStack
-                maxW="800px"
                 zIndex={7}
                 px={2}
                 py={1}
@@ -99,9 +72,10 @@ export const GameSidebar = ({
                 bg="blackAlpha.700"
                 color="white"
                 minW="fit-content"
+                maxW="100%"
             >
-                <Text fontWeight="600" fontSize="2xl">
-                    {spotTitle}
+                <Text fontWeight="600" fontSize="lg">
+                    {panoramaAddress ?? task.title}
                 </Text>
                 {isViewerLoading && <Spinner size="sm" />}
             </HStack>

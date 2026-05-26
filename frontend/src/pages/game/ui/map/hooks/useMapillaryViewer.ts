@@ -17,13 +17,15 @@ const MAX_MAPILLARY_RETRY_ATTEMPTS = 3;
 const MAPILLARY_RETRY_DELAY_MS = 700;
 const MIN_PROJECTION_SAMPLE_POINTS = 6;
 const MAX_PROJECTION_SAMPLE_POINTS = 12;
+let hasPatchedWebGlContext = false;
 
 const INITIAL_VIEWER_STATE: ViewerState = {
     imageId: null,
     imageThumbUrl: null,
     isLoading: false,
-    message:
-        'Выбери одну из моковых точек или кликни по карте, чтобы открыть ближайшую сферическую сцену.',
+    panoramaAddress: null,
+    panoramaLocation: null,
+    message: 'Кликни по карте, чтобы открыть ближайшую сферическую сцену.',
     status: 'idle',
 };
 
@@ -31,6 +33,8 @@ const DISABLED_VIEWER_STATE: ViewerState = {
     imageId: null,
     imageThumbUrl: null,
     isLoading: false,
+    panoramaAddress: null,
+    panoramaLocation: null,
     message:
         'Добавь `VITE_MAPILLARY_ACCESS_TOKEN` во фронтенд `.env`, чтобы включить Mapillary viewer.',
     status: 'error',
@@ -82,9 +86,92 @@ const getSamplePointCount = (sizePx: number) =>
         MAX_PROJECTION_SAMPLE_POINTS
     );
 
+const ensurePreserveDrawingBuffer = () => {
+    if (hasPatchedWebGlContext || typeof HTMLCanvasElement === 'undefined') {
+        return;
+    }
+
+    const originalGetContext = HTMLCanvasElement.prototype.getContext;
+
+    HTMLCanvasElement.prototype.getContext = function patchedGetContext(
+        this: HTMLCanvasElement,
+        contextId: string,
+        options?: CanvasRenderingContext2DSettings & WebGLContextAttributes
+    ) {
+        if (contextId === 'webgl' || contextId === 'webgl2') {
+            return originalGetContext.call(this, contextId, {
+                ...options,
+                preserveDrawingBuffer: true,
+            });
+        }
+
+        return originalGetContext.call(this, contextId, options);
+    } as typeof HTMLCanvasElement.prototype.getContext;
+
+    hasPatchedWebGlContext = true;
+};
+
+const getPanoramaLocation = (image: {
+    computed_geometry?: {
+        coordinates: [number, number];
+    };
+}) => {
+    const coordinates = image.computed_geometry?.coordinates;
+
+    if (!coordinates) {
+        return null;
+    }
+
+    return {
+        lat: coordinates[1],
+        lng: coordinates[0],
+    };
+};
+
+const formatPanoramaCoordinates = (location: GameLocation) =>
+    `${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}`;
+
+const resolvePanoramaAddress = async (
+    location: GameLocation,
+    signal: AbortSignal
+) => {
+    const params = new URLSearchParams({
+        addressdetails: '1',
+        format: 'jsonv2',
+        lat: String(location.lat),
+        lon: String(location.lng),
+        'accept-language': 'ru,en',
+        zoom: '18',
+    });
+    const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?${params.toString()}`,
+        {
+            headers: {
+                Accept: 'application/json',
+            },
+            signal,
+        }
+    );
+
+    if (!response.ok) {
+        throw new Error(
+            `Reverse geocoding failed: ${response.status} ${response.statusText}`
+        );
+    }
+
+    const payload = (await response.json()) as {
+        display_name?: string;
+        name?: string;
+    };
+    const address = payload.display_name?.trim() || payload.name?.trim();
+
+    return address || formatPanoramaCoordinates(location);
+};
+
 export const useMapillaryViewer = (
     accessToken: string | undefined,
-    selectedLocation: GameLocation | null
+    selectedLocation: GameLocation | null,
+    selectedImageId: string | null
 ) => {
     const [viewerState, setViewerState] =
         useState<ViewerState>(INITIAL_VIEWER_STATE);
@@ -95,6 +182,8 @@ export const useMapillaryViewer = (
         if (!viewerContainerRef.current || viewerRef.current || !accessToken) {
             return;
         }
+
+        ensurePreserveDrawingBuffer();
 
         const viewer = new Viewer({
             accessToken,
@@ -149,6 +238,8 @@ export const useMapillaryViewer = (
                     ...currentState,
                     imageId: currentImage.id,
                     imageThumbUrl: imageDetails.thumb_1024_url ?? null,
+                    panoramaAddress: null,
+                    panoramaLocation: getPanoramaLocation(imageDetails),
                 }));
             } catch (error) {
                 if (!isActive) {
@@ -174,13 +265,28 @@ export const useMapillaryViewer = (
     useEffect(() => {
         const viewer = viewerRef.current;
 
-        if (!accessToken || !viewer || !selectedLocation) {
+        if (
+            !accessToken ||
+            !viewer ||
+            (!selectedLocation && !selectedImageId)
+        ) {
             return;
         }
 
         let isMounted = true;
 
-        const openNearestScene = async () => {
+        const resolveFallbackImage = async () => {
+            if (!selectedLocation) {
+                return null;
+            }
+
+            return await findNearestMapillaryImage(
+                selectedLocation,
+                accessToken
+            );
+        };
+
+        const openScene = async () => {
             for (
                 let attempt = 1;
                 attempt <= MAX_MAPILLARY_RETRY_ATTEMPTS;
@@ -190,17 +296,34 @@ export const useMapillaryViewer = (
                     setViewerState((currentState) => ({
                         ...currentState,
                         isLoading: true,
+                        panoramaAddress: null,
+                        panoramaLocation: null,
                         message:
                             attempt === 1
-                                ? 'Ищем ближайшую панораму Mapillary...'
+                                ? selectedImageId
+                                    ? 'Открываем выбранную панораму Mapillary...'
+                                    : 'Ищем ближайшую панораму Mapillary...'
                                 : `Mapillary временно ответил ошибкой. Повторяем попытку ${attempt} из ${MAX_MAPILLARY_RETRY_ATTEMPTS}...`,
                         status: 'loading',
                     }));
 
-                    const image = await findNearestMapillaryImage(
-                        selectedLocation,
-                        accessToken
-                    );
+                    let image = selectedImageId
+                        ? await getMapillaryImageById(
+                              selectedImageId,
+                              accessToken
+                          )
+                        : await findNearestMapillaryImage(
+                              selectedLocation as GameLocation,
+                              accessToken
+                          );
+
+                    if (!isMounted) {
+                        return;
+                    }
+
+                    if (!image && selectedImageId) {
+                        image = await resolveFallbackImage();
+                    }
 
                     if (!isMounted) {
                         return;
@@ -211,15 +334,33 @@ export const useMapillaryViewer = (
                             imageId: null,
                             imageThumbUrl: null,
                             isLoading: false,
+                            panoramaAddress: null,
+                            panoramaLocation: null,
                             message:
                                 'Рядом с этой точкой не нашлось публичной сферической ' +
-                                'сцены. Попробуй другую кнопку или кликни в более туристическое место.',
+                                'сцены. Попробуй кликнуть в более туристическое место.',
                             status: 'error',
                         });
                         return;
                     }
 
-                    const movedImage = await viewer.moveTo(image.id);
+                    let movedImage;
+
+                    try {
+                        movedImage = await viewer.moveTo(image.id);
+                    } catch (moveError) {
+                        if (!selectedImageId) {
+                            throw moveError;
+                        }
+
+                        const fallbackImage = await resolveFallbackImage();
+
+                        if (!fallbackImage) {
+                            throw moveError;
+                        }
+
+                        movedImage = await viewer.moveTo(fallbackImage.id);
+                    }
 
                     const resolvedImage = await getMapillaryImageById(
                         movedImage.id,
@@ -234,6 +375,8 @@ export const useMapillaryViewer = (
                         imageId: movedImage.id,
                         imageThumbUrl: resolvedImage.thumb_1024_url ?? null,
                         isLoading: false,
+                        panoramaAddress: null,
+                        panoramaLocation: getPanoramaLocation(resolvedImage),
                         message: `Открыт ближайший кадр Mapillary: ${movedImage.id}`,
                         status: 'ready',
                     });
@@ -257,6 +400,8 @@ export const useMapillaryViewer = (
                         imageId: null,
                         imageThumbUrl: null,
                         isLoading: false,
+                        panoramaAddress: null,
+                        panoramaLocation: null,
                         message:
                             error instanceof Error
                                 ? `${error.message} После ${attempt} попыток сцена так и не загрузилась.`
@@ -269,12 +414,114 @@ export const useMapillaryViewer = (
             }
         };
 
-        void openNearestScene();
+        void openScene();
 
         return () => {
             isMounted = false;
         };
-    }, [accessToken, selectedLocation]);
+    }, [accessToken, selectedImageId, selectedLocation]);
+
+    useEffect(() => {
+        if (!viewerState.panoramaLocation) {
+            setViewerState((currentState) =>
+                currentState.panoramaAddress === null
+                    ? currentState
+                    : {
+                          ...currentState,
+                          panoramaAddress: null,
+                      }
+            );
+
+            return;
+        }
+
+        const abortController = new AbortController();
+        const currentLocation = viewerState.panoramaLocation;
+
+        void (async () => {
+            try {
+                const panoramaAddress = await resolvePanoramaAddress(
+                    currentLocation,
+                    abortController.signal
+                );
+
+                setViewerState((currentState) => {
+                    if (
+                        currentState.panoramaLocation?.lat !==
+                            currentLocation.lat ||
+                        currentState.panoramaLocation?.lng !== currentLocation.lng
+                    ) {
+                        return currentState;
+                    }
+
+                    return {
+                        ...currentState,
+                        panoramaAddress,
+                    };
+                });
+            } catch (error) {
+                if (abortController.signal.aborted) {
+                    return;
+                }
+
+                console.warn('Failed to resolve panorama address', error);
+
+                setViewerState((currentState) => {
+                    if (
+                        currentState.panoramaLocation?.lat !==
+                            currentLocation.lat ||
+                        currentState.panoramaLocation?.lng !== currentLocation.lng
+                    ) {
+                        return currentState;
+                    }
+
+                    return {
+                        ...currentState,
+                        panoramaAddress:
+                            formatPanoramaCoordinates(currentLocation),
+                    };
+                });
+            }
+        })();
+
+        return () => {
+            abortController.abort();
+        };
+    }, [viewerState.panoramaLocation]);
+
+    const captureCurrentFrame = async () => {
+        const viewer = viewerRef.current;
+        const viewerContainer = viewerContainerRef.current;
+
+        if (!viewer || !viewerContainer) {
+            throw new Error('Mapillary viewer is not initialized.');
+        }
+
+        const canvas = viewer.getCanvas();
+
+        if (!canvas) {
+            throw new Error('Mapillary viewer canvas is unavailable.');
+        }
+
+        await new Promise<void>((resolve) => {
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => resolve());
+            });
+        });
+
+        const dataUrl = canvas.toDataURL('image/png');
+        const [, base64Payload] = dataUrl.split(',');
+
+        if (!base64Payload) {
+            throw new Error('Unable to capture current Mapillary viewport.');
+        }
+
+        return {
+            base64: base64Payload,
+            height: canvas.height,
+            width: canvas.width,
+        };
+    };
 
     const projectSelectionToBasic = async (
         selectionDraft: SelectionPayloadDraft
@@ -417,6 +664,7 @@ export const useMapillaryViewer = (
             viewerState.status === 'ready' &&
             !!accessToken &&
             !!selectedLocation,
+        captureCurrentFrame,
         projectSelectionToBasic,
         resolvedViewerState: accessToken ? viewerState : DISABLED_VIEWER_STATE,
         viewerContainerRef,
