@@ -9,12 +9,14 @@ import {
     Text,
     VStack,
 } from '@chakra-ui/react';
+import { Spoiler } from 'spoiled';
 
 import type { GameTask, SelectionBox, SelectionPayload } from '../lib/types';
 
 type ViewerSelectionLayerProps = {
     draftSelection: SelectionBox | null;
     isInteractive: boolean;
+    isSubmittingSelection: boolean;
     selectedTaskId: string | null;
     selectionPayload: SelectionPayload | null;
     selectionLayerRef: React.RefObject<HTMLDivElement | null>;
@@ -30,6 +32,7 @@ type ViewerSelectionLayerProps = {
 export const ViewerSelectionLayer = ({
     draftSelection,
     isInteractive,
+    isSubmittingSelection,
     selectedTaskId,
     selectionPayload,
     selectionLayerRef,
@@ -72,10 +75,47 @@ export const ViewerSelectionLayer = ({
                         top={`${draftSelection.top}px`}
                         w={`${draftSelection.width}px`}
                         h={`${draftSelection.height}px`}
+                        overflow="hidden"
                         borderWidth="2px"
                         borderColor="red.300"
                         boxShadow="0 0 0 9999px rgba(0, 0, 0, 0.428)"
-                    />
+                    >
+                        {isSubmittingSelection && (
+                            <Box
+                                position="absolute"
+                                inset={0}
+                                borderRadius="inherit"
+                                bg="rgba(14, 18, 26, 0.58)"
+                                backdropFilter="auto"
+                                backdropBlur="18px"
+                                backdropSaturate="0.62"
+                                pointerEvents="none"
+                            >
+                                <Spoiler
+                                    asChild
+                                    hidden
+                                    revealOn={false}
+                                    transition={false}
+                                    theme="dark"
+                                    fps={18}
+                                    density={0.14}
+                                    noiseFadeDuration={0.18}
+                                    accentColor={[
+                                        'rgba(255, 255, 255, 0.92)',
+                                        'rgba(255, 255, 255, 0.92)',
+                                    ]}
+                                >
+                                    <Box
+                                        position="absolute"
+                                        inset={0}
+                                        borderRadius="inherit"
+                                        bg="rgba(255, 255, 255, 0.04)"
+                                        opacity={0.92}
+                                    />
+                                </Spoiler>
+                            </Box>
+                        )}
+                    </Box>
                     {selectionPayload && (
                         <Button
                             position="absolute"
@@ -87,6 +127,7 @@ export const ViewerSelectionLayer = ({
                             // minW="32px"
                             // h="32px"
                             pointerEvents="auto"
+                            disabled={isSubmittingSelection}
                             onPointerDown={stopPointerPropagation}
                             onPointerUp={stopPointerPropagation}
                             onClick={onResetSelection}
@@ -161,6 +202,8 @@ export const ViewerSelectionLayer = ({
                             <Button
                                 size="sm"
                                 colorPalette="red"
+                                loading={isSubmittingSelection}
+                                disabled={isSubmittingSelection}
                                 onClick={onSubmitSelection}
                             >
                                 <LuSend />

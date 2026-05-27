@@ -482,7 +482,7 @@ export const Map = () => {
 
         if (map.getZoom() < MIN_PANORAMA_MARKER_ZOOM) {
             setPanoramaMarkerState({
-                message: `Приблизь карту до zoom ${MIN_PANORAMA_MARKER_ZOOM}, чтобы появились точки покрытия Mapillary.`,
+                message: `Приблизь карту до zoom ${MIN_PANORAMA_MARKER_ZOOM}, чтобы появились линии и точки покрытия Mapillary.`,
                 status: 'idle',
             });
             return;
@@ -491,7 +491,7 @@ export const Map = () => {
         if (map.getZoom() < 14) {
             setPanoramaMarkerState({
                 message:
-                    'Кликни по зелёной точке Mapillary, чтобы открыть панораму.',
+                    'Кликни по зелёной линии Mapillary, чтобы открыть панораму этого трека.',
                 status: 'ready',
             });
             return;
@@ -499,7 +499,7 @@ export const Map = () => {
 
         setPanoramaMarkerState({
             message:
-                'На этом зуме доступны точные pano-точки. Кликни по зелёной точке.',
+                'На этом зуме можно кликать и по зелёным точкам, и по линиям Mapillary.',
             status: 'ready',
         });
     }, [accessToken, isSessionActive]);
@@ -653,6 +653,7 @@ export const Map = () => {
                 return;
             }
 
+            const layerId = feature.layer.id;
             const geometryCoordinates =
                 feature.geometry.type === 'Point' &&
                 Array.isArray(feature.geometry.coordinates) &&
@@ -660,22 +661,25 @@ export const Map = () => {
                     ? feature.geometry.coordinates
                     : null;
 
-            if (!geometryCoordinates) {
-                return;
-            }
-
             const imageIdValue =
-                feature.properties?.image_id ?? feature.properties?.id;
+                layerId === MAPILLARY_SEQUENCE_LAYER_ID
+                    ? feature.properties?.image_id
+                    : (feature.properties?.image_id ?? feature.properties?.id);
             const imageId = imageIdValue ? String(imageIdValue) : null;
 
             if (!imageId) {
                 return;
             }
 
-            const clickedLocation = {
-                lat: Number(geometryCoordinates[1]),
-                lng: Number(geometryCoordinates[0]),
-            };
+            const clickedLocation = geometryCoordinates
+                ? {
+                      lat: Number(geometryCoordinates[1]),
+                      lng: Number(geometryCoordinates[0]),
+                  }
+                : {
+                      lat: event.lngLat.lat,
+                      lng: event.lngLat.lng,
+                  };
 
             resetSelection();
             selectScene(clickedLocation, imageId);
@@ -772,6 +776,7 @@ export const Map = () => {
             });
 
             registerInteractiveLayer(MAPILLARY_OVERVIEW_LAYER_ID);
+            registerInteractiveLayer(MAPILLARY_SEQUENCE_LAYER_ID);
             registerInteractiveLayer(MAPILLARY_IMAGE_LAYER_ID);
             updateCoverageHint();
         });
@@ -912,6 +917,7 @@ export const Map = () => {
                 <ViewerSelectionLayer
                     draftSelection={draftSelection}
                     isInteractive={isSelectionMode && canDrawSelection}
+                    isSubmittingSelection={isSubmittingSelection}
                     selectedTaskId={activeTask?.id ?? null}
                     selectionPayload={selectionPayload}
                     selectionLayerRef={selectionLayerRef}
