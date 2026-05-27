@@ -183,7 +183,6 @@ export const Map = () => {
         resetSelectedSpot,
         selectedImageId,
         selectedLocation,
-        selectLocation,
         selectScene,
     } = useGameSpotState();
     const mapContainerRef = useRef<HTMLDivElement | null>(null);
@@ -198,7 +197,7 @@ export const Map = () => {
     const [panoramaMarkerState, setPanoramaMarkerState] =
         useState<PanoramaMarkerState>({
             message:
-                'Сначала начни игру, затем выбери точку на карте или покрытие Mapillary.',
+                'Сначала начни игру, затем выбери точку Mapillary с доступной панорамой.',
             status: 'idle',
         });
     const {
@@ -483,7 +482,7 @@ export const Map = () => {
 
         if (map.getZoom() < MIN_PANORAMA_MARKER_ZOOM) {
             setPanoramaMarkerState({
-                message: `Приблизь карту до zoom ${MIN_PANORAMA_MARKER_ZOOM}, чтобы появились кликабельные линии покрытия.`,
+                message: `Приблизь карту до zoom ${MIN_PANORAMA_MARKER_ZOOM}, чтобы появились точки покрытия Mapillary.`,
                 status: 'idle',
             });
             return;
@@ -492,7 +491,7 @@ export const Map = () => {
         if (map.getZoom() < 14) {
             setPanoramaMarkerState({
                 message:
-                    'Кликни по зелёной линии Mapillary, чтобы открыть репрезентативную панораму этого трека.',
+                    'Кликни по зелёной точке Mapillary, чтобы открыть панораму.',
                 status: 'ready',
             });
             return;
@@ -500,7 +499,7 @@ export const Map = () => {
 
         setPanoramaMarkerState({
             message:
-                'На этом зуме доступны точные pano-точки. Кликни по зелёной точке или линии.',
+                'На этом зуме доступны точные pano-точки. Кликни по зелёной точке.',
             status: 'ready',
         });
     }, [accessToken, isSessionActive]);
@@ -654,35 +653,32 @@ export const Map = () => {
                 return;
             }
 
-            const layerId = feature.layer.id;
-            const imageIdValue =
-                layerId === MAPILLARY_SEQUENCE_LAYER_ID
-                    ? feature.properties?.image_id
-                    : (feature.properties?.image_id ?? feature.properties?.id);
-            const imageId = imageIdValue ? String(imageIdValue) : null;
-
             const geometryCoordinates =
                 feature.geometry.type === 'Point' &&
                 Array.isArray(feature.geometry.coordinates) &&
                 feature.geometry.coordinates.length >= 2
                     ? feature.geometry.coordinates
                     : null;
-            const clickedLocation = geometryCoordinates
-                ? {
-                      lat: Number(geometryCoordinates[1]),
-                      lng: Number(geometryCoordinates[0]),
-                  }
-                : {
-                      lat: event.lngLat.lat,
-                      lng: event.lngLat.lng,
-                  };
+
+            if (!geometryCoordinates) {
+                return;
+            }
+
+            const imageIdValue =
+                feature.properties?.image_id ?? feature.properties?.id;
+            const imageId = imageIdValue ? String(imageIdValue) : null;
+
+            if (!imageId) {
+                return;
+            }
+
+            const clickedLocation = {
+                lat: Number(geometryCoordinates[1]),
+                lng: Number(geometryCoordinates[0]),
+            };
 
             resetSelection();
-            if (imageId) {
-                selectScene(clickedLocation, imageId);
-            } else {
-                selectLocation(clickedLocation);
-            }
+            selectScene(clickedLocation, imageId);
             updateSelectedMarker(clickedLocation);
             focusMapOnLocation(clickedLocation, {
                 duration: 220,
@@ -776,7 +772,6 @@ export const Map = () => {
             });
 
             registerInteractiveLayer(MAPILLARY_OVERVIEW_LAYER_ID);
-            registerInteractiveLayer(MAPILLARY_SEQUENCE_LAYER_ID);
             registerInteractiveLayer(MAPILLARY_IMAGE_LAYER_ID);
             updateCoverageHint();
         });
@@ -789,25 +784,6 @@ export const Map = () => {
             window.setTimeout(() => {
                 isMapDraggingRef.current = false;
             }, 0);
-        });
-
-        map.on('click', (event) => {
-            if (!isSessionActiveRef.current || isMapDraggingRef.current) {
-                return;
-            }
-
-            const clickedLocation = {
-                lat: event.lngLat.lat,
-                lng: event.lngLat.lng,
-            };
-
-            resetSelection();
-            selectLocation(clickedLocation);
-            updateSelectedMarker(clickedLocation);
-            focusMapOnLocation(clickedLocation, {
-                duration: 220,
-                zoom: Math.max(map.getZoom(), 14),
-            });
         });
 
         map.on('moveend', () => {
@@ -828,7 +804,6 @@ export const Map = () => {
         accessToken,
         focusMapOnLocation,
         resetSelection,
-        selectLocation,
         selectScene,
         updateCoverageHint,
         updateSelectedMarker,
