@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { LuArrowLeft, LuCheck, LuCircleDashed } from 'react-icons/lu';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -59,6 +60,26 @@ type GameSidebarProps = {
     onCompleteTaskForDebug: (taskId: string) => void;
 };
 
+const formatRemainingTime = (expiresAt: string | null, nowMs: number) => {
+    if (!expiresAt) {
+        return null;
+    }
+
+    const remainingMs = new Date(expiresAt).getTime() - nowMs;
+
+    if (remainingMs <= 0) {
+        return '00:00';
+    }
+
+    const totalSeconds = Math.floor(remainingMs / 1000);
+    const minutes = Math.floor(totalSeconds / 60)
+        .toString()
+        .padStart(2, '0');
+    const seconds = (totalSeconds % 60).toString().padStart(2, '0');
+
+    return `${minutes}:${seconds}`;
+};
+
 export const GameSidebar = ({
     activeTask,
     currentUser,
@@ -76,6 +97,25 @@ export const GameSidebar = ({
         ? getUserLevelProgress(currentUser.xp, currentUser.level)
         : null;
     const nextLevel = (currentUser?.level ?? 0) + 1;
+    const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
+    const remainingTime = formatRemainingTime(
+        session?.status === 'ACTIVE' ? (session.expiresAt ?? null) : null,
+        currentTimeMs
+    );
+
+    useEffect(() => {
+        if (session?.status !== 'ACTIVE' || !session.expiresAt) {
+            return;
+        }
+
+        const timerId = window.setInterval(() => {
+            setCurrentTimeMs(Date.now());
+        }, 1000);
+
+        return () => {
+            window.clearInterval(timerId);
+        };
+    }, [session?.expiresAt, session?.status]);
 
     return (
         <HStack align="flex-start" w="auto" pointerEvents="none">
@@ -126,6 +166,16 @@ export const GameSidebar = ({
                               ? 'Все задания выполнены. Можно вернуться в хаб или сразу начать новую сессию.'
                               : 'Подбираем задания и готовим карту к поиску объектов.'}
                     </Text>
+                    {remainingTime && (
+                        <Text
+                            mt={3}
+                            fontSize="sm"
+                            fontWeight="700"
+                            color="red.600"
+                        >
+                            До конца сессии: {remainingTime}
+                        </Text>
+                    )}
                     {!isSessionActive && isStartingGame && (
                         <HStack mt={4} color="red.500">
                             <Spinner size="sm" />

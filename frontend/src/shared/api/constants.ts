@@ -9,6 +9,7 @@ export const apiMethods = {
 export const tagTypes = {
     // Текущий пользователь
     CurrentUser: 'CurrentUser',
+    GameSession: 'GameSession',
 
     // Друзья
     Friend: 'Friend',

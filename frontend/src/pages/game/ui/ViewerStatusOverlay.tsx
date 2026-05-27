@@ -46,7 +46,7 @@ export const ViewerStatusOverlay = ({
     }
 
     return (
-        <Box position="absolute" right={4} bottom={4} zIndex={3} maxW="420px">
+        <Box position="absolute" left={4} bottom={4} zIndex={3} maxW="420px">
             <Box p={4} borderRadius="xl" bg="blackAlpha.700" color="white">
                 <HStack gap={2}>
                     <LuSparkles />

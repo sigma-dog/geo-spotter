@@ -9,7 +9,10 @@ import {
     Portal,
 } from '@chakra-ui/react';
 
-import { useStartSoloGameSessionMutation } from 'shared/api/game';
+import {
+    useGetActiveGameSessionQuery,
+    useStartSoloGameSessionMutation,
+} from 'shared/api/game';
 import { toaster } from 'shared/ui/chakra/toaster';
 import { useOpenAddFriendsPanel } from 'widgets/addFriendsPanel';
 import { EditProfilePanel } from 'widgets/editProfilePanel';
@@ -18,6 +21,7 @@ import { ProfilePanel } from 'widgets/profilePanel';
 const Home: FC = () => {
     const [isOpenEditProfilePanel, setIsOpenEditProfilePanel] = useState(false);
     const navigate = useNavigate();
+    const { data: activeSession } = useGetActiveGameSessionQuery();
     const [startSoloGameSession, { isLoading: isStartingSoloGame }] =
         useStartSoloGameSessionMutation();
 
@@ -31,15 +35,17 @@ const Home: FC = () => {
 
     const openAddFriendsPanel = useOpenAddFriendsPanel();
     const openGame = () => {
+        if (activeSession?.status === 'ACTIVE') {
+            navigate('/game');
+
+            return;
+        }
+
         void (async () => {
             try {
-                const session = await startSoloGameSession().unwrap();
+                await startSoloGameSession().unwrap();
 
-                navigate('/game', {
-                    state: {
-                        preloadedSession: session,
-                    },
-                });
+                navigate('/game');
             } catch (error) {
                 console.error('Failed to start solo game session', error);
                 toaster.create({
@@ -83,7 +89,9 @@ const Home: FC = () => {
                                 loading={isStartingSoloGame}
                             >
                                 <LuPlay />
-                                Одиночная игра
+                                {activeSession?.status === 'ACTIVE'
+                                    ? 'Продолжить игру'
+                                    : 'Одиночная игра'}
                             </Button>
                             <ActionBar.Separator />
                             <Button

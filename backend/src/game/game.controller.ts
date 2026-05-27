@@ -17,6 +17,11 @@ export class GameController {
         return this.gameService.getActiveSession(userId);
     }
 
+    @Get('sessions/recent')
+    getRecentSessions(@CurrentUserId() userId: string) {
+        return this.gameService.getRecentSessions(userId);
+    }
+
     @Post('debug/sessions/:sessionId/tasks/:sessionTaskId/complete')
     completeTaskForDebug(
         @CurrentUserId() userId: string,

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
-import { Center, Spinner } from '@chakra-ui/react';
 import { Navigate } from 'react-router-dom';
+import { Center, Spinner } from '@chakra-ui/react';
 
 import { useGetCurrentUserDataQuery } from 'shared/api/currentUser';
 import { getAccessToken, getRefreshToken } from 'shared/api/tokensUtils';

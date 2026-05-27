@@ -17,19 +17,28 @@ const gameApi = api.injectEndpoints({
                 url: `/game/debug/sessions/${sessionId}/tasks/${sessionTaskId}/complete`,
                 method: apiMethods.post,
             }),
-            invalidatesTags: [tagTypes.CurrentUser],
+            invalidatesTags: [tagTypes.CurrentUser, tagTypes.GameSession],
         }),
         getActiveGameSession: build.query<GameSession | null, void>({
             query: () => ({
                 url: '/game/sessions/active',
                 method: apiMethods.get,
             }),
+            providesTags: [tagTypes.GameSession],
+        }),
+        getRecentGameSessions: build.query<GameSession[], void>({
+            query: () => ({
+                url: '/game/sessions/recent',
+                method: apiMethods.get,
+            }),
+            providesTags: [tagTypes.GameSession],
         }),
         startSoloGameSession: build.mutation<GameSession, void>({
             query: () => ({
                 url: '/game/sessions/solo/start',
                 method: apiMethods.post,
             }),
+            invalidatesTags: [tagTypes.GameSession],
         }),
         submitGameTaskSelection: build.mutation<
             SelectionVerificationResult,
@@ -40,7 +49,7 @@ const gameApi = api.injectEndpoints({
                 method: apiMethods.post,
                 body,
             }),
-            invalidatesTags: [tagTypes.CurrentUser],
+            invalidatesTags: [tagTypes.CurrentUser, tagTypes.GameSession],
         }),
     }),
 });
@@ -48,6 +57,7 @@ const gameApi = api.injectEndpoints({
 export const {
     useCompleteGameTaskForDebugMutation,
     useGetActiveGameSessionQuery,
+    useGetRecentGameSessionsQuery,
     useStartSoloGameSessionMutation,
     useSubmitGameTaskSelectionMutation,
 } = gameApi;

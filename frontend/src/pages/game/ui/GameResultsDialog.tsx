@@ -17,6 +17,11 @@ export const GameResultsDialog = ({
     onRestart,
     isRestarting,
 }: GameResultsDialogProps) => {
+    const allTasksCompleted =
+        (session?.completedTasksCount ?? 0) ===
+            (session?.totalTasksCount ?? 0) &&
+        (session?.totalTasksCount ?? 0) > 0;
+
     return (
         <Dialog.Root lazyMount open={isOpen} placement="center">
             <Portal>
@@ -31,8 +36,9 @@ export const GameResultsDialog = ({
                         <Dialog.Body>
                             <VStack align="stretch" gap={3}>
                                 <Text>
-                                    Все задания выполнены. Одиночная сессия
-                                    завершена.
+                                    {allTasksCompleted
+                                        ? 'Все задания выполнены. Одиночная сессия завершена.'
+                                        : 'Время сессии истекло. Показываем итоговый результат по выполненным заданиям.'}
                                 </Text>
                                 <Text color="gray.600">
                                     Найдено предметов:{' '}

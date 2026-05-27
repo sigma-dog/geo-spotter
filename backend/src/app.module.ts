@@ -7,6 +7,7 @@ import { FriendsModule } from './friends/friends.module';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtAuthGuard } from './auth/jwt.guard';
 import { GameModule } from './game/game.module';
+import { RedisModule } from './redis/redis.module';
 
 @Module({
     imports: [
@@ -14,6 +15,7 @@ import { GameModule } from './game/game.module';
             isGlobal: true,
         }),
         PrismaModule,
+        RedisModule,
         UsersModule,
         AuthModule,
         FriendsModule,

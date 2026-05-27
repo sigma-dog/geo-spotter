@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
 import { GameAiClientService } from './game-ai-client.service';
 import { GameController } from './game.controller';
 import { GameDebugService } from './game-debug.service';
@@ -8,7 +7,6 @@ import { GameSelectionVerifierService } from './game-selection-verifier.service'
 import { GameService } from './game.service';
 
 @Module({
-    imports: [ConfigModule],
     controllers: [GameController],
     providers: [
         GameAiClientService,

@@ -6,6 +6,7 @@ import {
 } from 'react-router-dom';
 
 import { AuthRoute } from './AuthRoute';
+import { GameSessionRoute } from './GameSessionRoute';
 import { ProtectedRoute } from './ProtectedRoute';
 
 const Index = lazy(() => import('pages/index'));
@@ -29,7 +30,9 @@ export const mainRouter = createBrowserRouter(
                 path="game"
                 element={
                     <ProtectedRoute>
-                        <Game />
+                        <GameSessionRoute>
+                            <Game />
+                        </GameSessionRoute>
                     </ProtectedRoute>
                 }
             />

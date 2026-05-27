@@ -25,7 +25,9 @@ import {
 import { GameAiClientService } from './game-ai-client.service';
 import { GameDebugService } from './game-debug.service';
 import { GameMapillaryService } from './game-mapillary.service';
+import { GameSessionStoreService } from './game-session-store.service';
 import { GameSelectionVerifierService } from './game-selection-verifier.service';
+import type { StoredGameSession } from './game-session.types';
 import type {
     AiVerificationRequest,
     GameSessionView,
@@ -58,6 +60,7 @@ export class GameService {
         private readonly gameAiClientService: GameAiClientService,
         private readonly gameDebugService: GameDebugService,
         private readonly gameMapillaryService: GameMapillaryService,
+        private readonly gameSessionStoreService: GameSessionStoreService,
         private readonly gameSelectionVerifierService: GameSelectionVerifierService,
         private readonly prismaService: PrismaService
     ) {}
@@ -65,18 +68,13 @@ export class GameService {
     async startSoloSession(userId: string): Promise<GameSessionView> {
         await this.assertUserExists(userId);
 
-        const session = await this.prismaService.$transaction(async (tx) => {
-            await tx.gameSession.updateMany({
-                where: {
-                    userId,
-                    status: GameSessionStatus.ACTIVE,
-                },
-                data: {
-                    finishedAt: new Date(),
-                    status: GameSessionStatus.ABANDONED,
-                },
-            });
+        const currentSession = await this.getCurrentSession(userId);
 
+        if (currentSession?.status === 'ACTIVE') {
+            return currentSession;
+        }
+
+        const session = await this.prismaService.$transaction(async (tx) => {
             const taskRecords = await Promise.all(
                 SOLO_GAME_TASK_POOL.map((task) =>
                     tx.gameTask.upsert({
@@ -133,28 +131,45 @@ export class GameService {
             return createdSession;
         });
 
-        return this.mapSessionView(session);
+        const sessionView = this.mapSessionView(session);
+        const storedSession = this.gameSessionStoreService.createStoredSession({
+            durationSeconds: this.getSessionDurationSeconds(),
+            session: sessionView,
+            userId,
+        });
+
+        await this.gameSessionStoreService.saveSession(storedSession);
+
+        return storedSession;
     }
 
     async getActiveSession(userId: string): Promise<GameSessionView | null> {
         await this.assertUserExists(userId);
 
-        const session = await this.prismaService.gameSession.findFirst({
+        return this.getCurrentSession(userId);
+    }
+
+    async getRecentSessions(userId: string): Promise<GameSessionView[]> {
+        await this.assertUserExists(userId);
+
+        const sessions = await this.prismaService.gameSession.findMany({
             where: {
+                status: {
+                    in: [
+                        GameSessionStatus.COMPLETED,
+                        GameSessionStatus.ABANDONED,
+                    ],
+                },
                 userId,
-                status: GameSessionStatus.ACTIVE,
             },
             include: ACTIVE_SESSION_INCLUDE,
             orderBy: {
-                createdAt: 'desc',
+                finishedAt: 'desc',
             },
+            take: 10,
         });
 
-        if (!session) {
-            return null;
-        }
-
-        return this.mapSessionView(session);
+        return sessions.map((session) => this.mapSessionView(session));
     }
 
     async completeTaskForDebug(
@@ -167,6 +182,11 @@ export class GameService {
         if (!this.gameDebugService.isGameplayDebugEnabled()) {
             throw new NotFoundException('Debug endpoint is unavailable.');
         }
+
+        const currentSession = await this.requireActiveSession(
+            userId,
+            sessionId
+        );
 
         const session = await this.prismaService.gameSession.findFirst({
             where: {
@@ -207,20 +227,11 @@ export class GameService {
             userId,
         });
 
-        const updatedSession = await this.prismaService.gameSession.findUnique({
-            where: {
-                id: session.id,
-            },
-            include: ACTIVE_SESSION_INCLUDE,
-        });
-
-        if (!updatedSession) {
-            throw new NotFoundException(
-                'Игровая сессия не найдена после обновления.'
-            );
-        }
-
-        return this.mapSessionView(updatedSession);
+        return this.refreshStoredSession(
+            userId,
+            session.id,
+            currentSession.expiresAt
+        );
     }
 
     async submitSelection(
@@ -228,6 +239,10 @@ export class GameService {
         dto: SubmitSelectionDto
     ): Promise<VerificationResponse> {
         await this.assertUserExists(userId);
+        const currentSession = await this.requireActiveSession(
+            userId,
+            dto.sessionId
+        );
 
         const session = await this.prismaService.gameSession.findFirst({
             where: {
@@ -358,6 +373,12 @@ export class GameService {
                 sessionCompleted = completionState.sessionCompleted;
             }
 
+            await this.refreshStoredSession(
+                userId,
+                session.id,
+                currentSession.expiresAt
+            );
+
             return {
                 attemptId: attempt.id,
                 awardedXp,
@@ -384,6 +405,12 @@ export class GameService {
                     status: TaskAttemptStatus.FAILED,
                 },
             });
+
+            await this.refreshStoredSession(
+                userId,
+                session.id,
+                currentSession.expiresAt
+            );
 
             if (error instanceof Error) {
                 throw error;
@@ -565,6 +592,7 @@ export class GameService {
             attemptsCount: session._count.tasks,
             awardedXp,
             completedTasksCount,
+            expiresAt: null,
             finishedAt: session.finishedAt?.toISOString() ?? null,
             id: session.id,
             mode: session.mode,
@@ -657,5 +685,151 @@ export class GameService {
 
     private calculateLevel(xp: number) {
         return Math.floor(xp / USER_XP_PER_LEVEL);
+    }
+
+    private async getCurrentSession(
+        userId: string
+    ): Promise<GameSessionView | null> {
+        const cachedSession =
+            await this.gameSessionStoreService.getCurrentSession(userId);
+
+        if (cachedSession) {
+            if (
+                cachedSession.status === 'ACTIVE' &&
+                this.gameSessionStoreService.isExpired(cachedSession)
+            ) {
+                return this.finalizeStoredSessionByTimeout(cachedSession);
+            }
+
+            return cachedSession;
+        }
+
+        const session = await this.prismaService.gameSession.findFirst({
+            where: {
+                userId,
+                status: GameSessionStatus.ACTIVE,
+            },
+            include: ACTIVE_SESSION_INCLUDE,
+            orderBy: {
+                createdAt: 'desc',
+            },
+        });
+
+        if (!session) {
+            return null;
+        }
+
+        const storedSession = this.gameSessionStoreService.createStoredSession({
+            durationSeconds: this.getSessionDurationSeconds(),
+            session: this.mapSessionView(session),
+            userId,
+        });
+
+        if (this.gameSessionStoreService.isExpired(storedSession)) {
+            return this.finalizeStoredSessionByTimeout(storedSession);
+        }
+
+        await this.gameSessionStoreService.saveSession(storedSession);
+
+        return storedSession;
+    }
+
+    private async requireActiveSession(userId: string, sessionId: string) {
+        const currentSession = await this.getCurrentSession(userId);
+
+        if (!currentSession || currentSession.id !== sessionId) {
+            throw new NotFoundException(
+                'Активная игровая сессия не найдена или уже завершена.'
+            );
+        }
+
+        if (currentSession.status !== 'ACTIVE') {
+            throw new BadRequestException(
+                'Игровая сессия уже завершена. Вернись в хаб и начни новую.'
+            );
+        }
+
+        return currentSession as StoredGameSession;
+    }
+
+    private async refreshStoredSession(
+        userId: string,
+        sessionId: string,
+        expiresAt: string
+    ) {
+        const updatedSession = await this.prismaService.gameSession.findUnique({
+            where: {
+                id: sessionId,
+            },
+            include: ACTIVE_SESSION_INCLUDE,
+        });
+
+        if (!updatedSession) {
+            throw new NotFoundException(
+                'Игровая сессия не найдена после обновления.'
+            );
+        }
+
+        const storedSession: StoredGameSession = {
+            ...this.mapSessionView(updatedSession),
+            expiresAt,
+            userId,
+        };
+
+        await this.gameSessionStoreService.saveSession(storedSession);
+
+        return storedSession;
+    }
+
+    private async finalizeStoredSessionByTimeout(session: StoredGameSession) {
+        await this.prismaService.gameSession.updateMany({
+            where: {
+                id: session.id,
+                status: GameSessionStatus.ACTIVE,
+            },
+            data: {
+                finishedAt: new Date(),
+                status: GameSessionStatus.COMPLETED,
+            },
+        });
+
+        return this.refreshStoredSession(
+            session.userId,
+            session.id,
+            session.expiresAt
+        );
+    }
+
+    private async finalizeCurrentSession(
+        userId: string,
+        status: 'ABANDONED' | 'COMPLETED'
+    ) {
+        const currentSession =
+            await this.gameSessionStoreService.getCurrentSession(userId);
+
+        if (currentSession) {
+            await this.prismaService.gameSession.updateMany({
+                where: {
+                    id: currentSession.id,
+                    status: GameSessionStatus.ACTIVE,
+                },
+                data: {
+                    finishedAt: new Date(),
+                    status:
+                        status === 'COMPLETED'
+                            ? GameSessionStatus.COMPLETED
+                            : GameSessionStatus.ABANDONED,
+                },
+            });
+
+            await this.gameSessionStoreService.deleteSession(
+                userId,
+                currentSession.id
+            );
+        }
+    }
+
+    private getSessionDurationSeconds() {
+        return Number(process.env.GAME_SESSION_DURATION_SECONDS ?? 900);
     }
 }

@@ -26,6 +26,7 @@ export type GameSession = {
     mode: 'SOLO' | 'MULTIPLAYER';
     status: 'ACTIVE' | 'COMPLETED' | 'ABANDONED';
     startedAt: string;
+    expiresAt: string | null;
     finishedAt: string | null;
     completedTasksCount: number;
     totalTasksCount: number;

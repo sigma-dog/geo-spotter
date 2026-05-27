@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { LuMap, LuMousePointerClick, LuScanSearch } from 'react-icons/lu';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
     ActionBar,
     Box,
@@ -149,18 +149,10 @@ const applySelectionResultToSession = (
 
 export const Map = () => {
     const accessToken = import.meta.env.VITE_MAPILLARY_ACCESS_TOKEN;
-    const location = useLocation();
     const navigate = useNavigate();
-    const navigationState = location.state as {
-        autoStartSolo?: boolean;
-        preloadedSession?: GameSession;
-    } | null;
     const { data: currentUser } = useGetCurrentUserDataQuery();
-    const {
-        data: activeSessionData,
-        isFetching: isActiveSessionFetching,
-        refetch: refetchActiveSession,
-    } = useGetActiveGameSessionQuery();
+    const { data: activeSessionData, refetch: refetchActiveSession } =
+        useGetActiveGameSessionQuery();
     const [startSoloGameSession, { isLoading: isStartingGame }] =
         useStartSoloGameSessionMutation();
     const [completeGameTaskForDebug] = useCompleteGameTaskForDebugMutation();
@@ -170,7 +162,7 @@ export const Map = () => {
     ] = useSubmitGameTaskSelectionMutation();
     const [sessionSnapshot, setSessionSnapshot] = useState<
         GameSession | null | undefined
-    >(navigationState?.preloadedSession);
+    >(undefined);
     const [completedSession, setCompletedSession] =
         useState<GameSession | null>(null);
     const [isResultsOpen, setIsResultsOpen] = useState(false);
@@ -193,7 +185,6 @@ export const Map = () => {
     );
     const isMapDraggingRef = useRef(false);
     const isSessionActiveRef = useRef(false);
-    const autoStartHandledRef = useRef(false);
     const [panoramaMarkerState, setPanoramaMarkerState] =
         useState<PanoramaMarkerState>({
             message:
@@ -208,13 +199,9 @@ export const Map = () => {
         viewerContainerRef,
     } = useMapillaryViewer(accessToken, selectedLocation, selectedImageId);
 
-    const session =
-        sessionSnapshot === undefined
-            ? (activeSessionData ?? null)
-            : sessionSnapshot;
+    const session = sessionSnapshot ?? activeSessionData ?? null;
     const currentWorldLocation =
         resolvedViewerState.panoramaLocation ?? selectedLocation;
-    const shouldAutoStartSolo = Boolean(navigationState?.autoStartSolo);
     const isDebugMode = import.meta.env.DEV;
 
     const activeTask = session
@@ -352,12 +339,15 @@ export const Map = () => {
                         return nextSession;
                     });
 
-                    if (result.taskCompleted) {
-                        resetSelection();
+                    const refreshedSession =
+                        await refetchActiveSession().unwrap();
+
+                    if (refreshedSession) {
+                        setSessionSnapshot(refreshedSession);
                     }
 
-                    if (result.sessionCompleted) {
-                        void refetchActiveSession();
+                    if (result.taskCompleted) {
+                        resetSelection();
                     }
                 } catch (error) {
                     console.error(
@@ -567,6 +557,7 @@ export const Map = () => {
                     }).unwrap();
 
                     setSessionSnapshot(updatedSession);
+                    void refetchActiveSession();
 
                     if (updatedSession.status === 'COMPLETED') {
                         setCompletedSession(updatedSession);
@@ -602,27 +593,61 @@ export const Map = () => {
     );
 
     useEffect(() => {
-        if (autoStartHandledRef.current || !shouldAutoStartSolo) {
+        if (activeSessionData) {
+            setSessionSnapshot(activeSessionData);
             return;
         }
 
-        if (isActiveSessionFetching) {
+        setSessionSnapshot((currentSession) =>
+            currentSession === undefined ? null : currentSession
+        );
+    }, [activeSessionData]);
+
+    useEffect(() => {
+        if (!session || session.status !== 'COMPLETED') {
             return;
         }
 
-        if (session?.status === 'ACTIVE') {
-            autoStartHandledRef.current = true;
+        setCompletedSession(session);
+        setIsResultsOpen(true);
+    }, [session]);
+
+    useEffect(() => {
+        if (session?.status !== 'ACTIVE' || !session.expiresAt) {
             return;
         }
 
-        autoStartHandledRef.current = true;
-        handleStartGame();
-    }, [
-        handleStartGame,
-        isActiveSessionFetching,
-        session,
-        shouldAutoStartSolo,
-    ]);
+        const timeoutMs = Math.max(
+            0,
+            new Date(session.expiresAt).getTime() - Date.now()
+        );
+        const timeoutId = window.setTimeout(() => {
+            void (async () => {
+                try {
+                    const refreshedSession =
+                        await refetchActiveSession().unwrap();
+
+                    setSessionSnapshot(refreshedSession ?? null);
+
+                    if (!refreshedSession) {
+                        navigate('/home', { replace: true });
+                        return;
+                    }
+
+                    if (refreshedSession.status === 'COMPLETED') {
+                        setCompletedSession(refreshedSession);
+                        setIsResultsOpen(true);
+                    }
+                } catch {
+                    navigate('/home', { replace: true });
+                }
+            })();
+        }, timeoutMs + 150);
+
+        return () => {
+            window.clearTimeout(timeoutId);
+        };
+    }, [navigate, refetchActiveSession, session?.expiresAt, session?.status]);
 
     useEffect(() => {
         if (!mapContainerRef.current || mapRef.current) {
@@ -941,10 +966,9 @@ export const Map = () => {
 
             <Box
                 position="absolute"
-                left={shouldKeepPanoramaVisible ? { base: 4, xl: 6 } : 0}
+                right={shouldKeepPanoramaVisible ? { base: 4, xl: 6 } : 0}
                 bottom={shouldKeepPanoramaVisible ? { base: 4, xl: 6 } : 'auto'}
                 top={shouldKeepPanoramaVisible ? 'auto' : 0}
-                insetInlineEnd={shouldKeepPanoramaVisible ? 'auto' : 0}
                 zIndex={shouldKeepPanoramaVisible ? 4 : 2}
                 w={shouldKeepPanoramaVisible ? { base: '600px' } : '100%'}
                 h={shouldKeepPanoramaVisible ? { base: '400px' } : '100%'}
@@ -962,7 +986,7 @@ export const Map = () => {
                 {(!isSessionActive || !hasSelectedSpot) && (
                     <Box
                         position="absolute"
-                        right={3}
+                        left={3}
                         bottom={3}
                         zIndex={2}
                         maxW="360px"
