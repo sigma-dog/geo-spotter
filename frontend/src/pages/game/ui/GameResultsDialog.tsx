@@ -1,4 +1,15 @@
-import { Button, Dialog, Portal, Text, VStack } from '@chakra-ui/react';
+import {
+    Avatar,
+    Badge,
+    Box,
+    Button,
+    Dialog,
+    HStack,
+    Portal,
+    Separator,
+    Text,
+    VStack,
+} from '@chakra-ui/react';
 
 import type { GameSession } from '../lib/types';
 
@@ -25,6 +36,17 @@ export const GameResultsDialog = ({
         (player) =>
             player.isCurrentUser && player.userId === session.winnerUserId
     );
+    const rankedPlayers = [...(session?.players ?? [])].sort((left, right) => {
+        if (right.completedTasksCount !== left.completedTasksCount) {
+            return right.completedTasksCount - left.completedTasksCount;
+        }
+
+        if (left.attemptsCount !== right.attemptsCount) {
+            return left.attemptsCount - right.attemptsCount;
+        }
+
+        return left.username.localeCompare(right.username, 'ru');
+    });
 
     return (
         <Dialog.Root lazyMount open={isOpen} placement="center">
@@ -62,6 +84,146 @@ export const GameResultsDialog = ({
                                 <Text color="gray.600">
                                     Получено опыта: {session?.awardedXp ?? 0} XP
                                 </Text>
+                                {session?.mode === 'MULTIPLAYER' &&
+                                    rankedPlayers.length > 0 && (
+                                        <>
+                                            <Separator />
+                                            <VStack align="stretch" gap={3}>
+                                                <Text
+                                                    fontWeight="700"
+                                                    color="gray.800"
+                                                >
+                                                    Рейтинг игроков
+                                                </Text>
+                                                {rankedPlayers.map(
+                                                    (player, index) => (
+                                                        <HStack
+                                                            key={player.userId}
+                                                            justify="space-between"
+                                                            align="stretch"
+                                                            p={3}
+                                                            borderRadius="xl"
+                                                            bg={
+                                                                player.isCurrentUser
+                                                                    ? 'red.50'
+                                                                    : 'gray.50'
+                                                            }
+                                                            borderWidth="1px"
+                                                            borderColor={
+                                                                player.userId ===
+                                                                session?.winnerUserId
+                                                                    ? 'green.200'
+                                                                    : player.isCurrentUser
+                                                                      ? 'red.200'
+                                                                      : 'gray.200'
+                                                            }
+                                                        >
+                                                            <HStack
+                                                                align="flex-start"
+                                                                gap={3}
+                                                            >
+                                                                <Box
+                                                                    minW="32px"
+                                                                    h="32px"
+                                                                    borderRadius="full"
+                                                                    bg={
+                                                                        index ===
+                                                                        0
+                                                                            ? 'yellow.400'
+                                                                            : 'gray.200'
+                                                                    }
+                                                                    color={
+                                                                        index ===
+                                                                        0
+                                                                            ? 'yellow.950'
+                                                                            : 'gray.700'
+                                                                    }
+                                                                    display="flex"
+                                                                    alignItems="center"
+                                                                    justifyContent="center"
+                                                                    fontWeight="800"
+                                                                >
+                                                                    {index + 1}
+                                                                </Box>
+                                                                <Avatar.Root size="md">
+                                                                    <Avatar.Fallback>
+                                                                        {player.username
+                                                                            .charAt(
+                                                                                0
+                                                                            )
+                                                                            .toUpperCase()}
+                                                                    </Avatar.Fallback>
+                                                                    <Avatar.Image
+                                                                        src={
+                                                                            player.avatarUrl ??
+                                                                            undefined
+                                                                        }
+                                                                    />
+                                                                </Avatar.Root>
+                                                                <VStack
+                                                                    align="stretch"
+                                                                    gap={1}
+                                                                >
+                                                                    <HStack
+                                                                        gap={2}
+                                                                    >
+                                                                        <Text fontWeight="700">
+                                                                            {
+                                                                                player.username
+                                                                            }
+                                                                        </Text>
+                                                                        {player.isCurrentUser && (
+                                                                            <Badge colorPalette="red">
+                                                                                Ты
+                                                                            </Badge>
+                                                                        )}
+                                                                        {player.userId ===
+                                                                            session?.winnerUserId && (
+                                                                            <Badge colorPalette="green">
+                                                                                Победитель
+                                                                            </Badge>
+                                                                        )}
+                                                                    </HStack>
+                                                                    <Text
+                                                                        fontSize="sm"
+                                                                        color="gray.600"
+                                                                    >
+                                                                        Найдено:{' '}
+                                                                        {
+                                                                            player.completedTasksCount
+                                                                        }
+                                                                        /
+                                                                        {
+                                                                            player.totalTasksCount
+                                                                        }
+                                                                    </Text>
+                                                                </VStack>
+                                                            </HStack>
+                                                            <VStack
+                                                                align="flex-end"
+                                                                gap={1}
+                                                            >
+                                                                <Text
+                                                                    fontSize="sm"
+                                                                    color="gray.500"
+                                                                >
+                                                                    Попыток
+                                                                </Text>
+                                                                <Text
+                                                                    fontWeight="800"
+                                                                    color="gray.800"
+                                                                >
+                                                                    {
+                                                                        player.attemptsCount
+                                                                    }
+                                                                </Text>
+                                                            </VStack>
+                                                        </HStack>
+                                                    )
+                                                )}
+                                            </VStack>
+                                        </>
+                                    )}
                             </VStack>
                         </Dialog.Body>
                         <Dialog.Footer>

@@ -1,4 +1,5 @@
 export {
+    useAbandonActiveGameSessionMutation,
     useCreateMultiplayerLobbyMutation,
     useCompleteGameTaskForDebugMutation,
     useGetActiveGameSessionQuery,

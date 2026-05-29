@@ -40,6 +40,7 @@ export type GameSession = {
 
 export type MultiplayerPlayerProgress = {
     avatarUrl: string | null;
+    attemptsCount: number;
     completedTasksCount: number;
     isCurrentUser: boolean;
     status: 'ACTIVE' | 'COMPLETED' | 'ABANDONED';

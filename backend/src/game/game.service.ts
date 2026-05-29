@@ -474,6 +474,14 @@ export class GameService {
         return this.getCurrentSession(userId);
     }
 
+    async abandonActiveSession(userId: string): Promise<{ ok: true }> {
+        await this.assertUserExists(userId);
+
+        await this.finalizeCurrentSession(userId, 'ABANDONED');
+
+        return { ok: true };
+    }
+
     async getRecentSessions(userId: string): Promise<GameSessionView[]> {
         await this.assertUserExists(userId);
 
@@ -1094,6 +1102,7 @@ export class GameService {
 
         return session.multiplayerMatch.sessions.map((playerSession) => ({
             avatarUrl: playerSession.user.avatarUrl,
+            attemptsCount: playerSession._count.tasks,
             completedTasksCount: playerSession.gameSessionTasks.filter(
                 (task) => task.status === GameSessionTaskStatus.COMPLETED
             ).length,

@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import {
     ActionBar,
     Badge,
+    Box,
     Button,
     type DialogOpenChangeDetails,
     Flex,
@@ -11,6 +12,7 @@ import {
 } from '@chakra-ui/react';
 
 import {
+    useAbandonActiveGameSessionMutation,
     useCreateMultiplayerLobbyMutation,
     useGetActiveGameSessionQuery,
     useGetIncomingMultiplayerLobbiesQuery,
@@ -24,6 +26,7 @@ import { useOpenAddFriendsPanel } from 'widgets/addFriendsPanel';
 import { EditProfilePanel } from 'widgets/editProfilePanel';
 import { ProfilePanel } from 'widgets/profilePanel';
 
+import { GamesHistory } from './gamesHistory/GamesHistory';
 import { IncomingMultiplayerInvitesDialog } from './IncomingMultiplayerInvitesDialog';
 import { MultiplayerLobbyDialog } from './MultiplayerLobbyDialog';
 import { PendingMultiplayerLobbyDialog } from './PendingMultiplayerLobbyDialog';
@@ -42,8 +45,10 @@ const Home: FC = () => {
         useGetPendingMultiplayerLobbyQuery();
     const { data: incomingLobbies, refetch: refetchIncomingLobbies } =
         useGetIncomingMultiplayerLobbiesQuery();
+
     const [startSoloGameSession, { isLoading: isStartingSoloGame }] =
         useStartSoloGameSessionMutation();
+    const [abandonActiveGameSession] = useAbandonActiveGameSessionMutation();
     const [createMultiplayerLobby, { isLoading: isStartingMultiplayerGame }] =
         useCreateMultiplayerLobbyMutation();
     const [respondToMultiplayerLobby] = useRespondToMultiplayerLobbyMutation();
@@ -179,7 +184,40 @@ const Home: FC = () => {
 
     const openMultiplayerLobby = () => {
         if (activeSession?.status === 'ACTIVE') {
-            navigate('/game');
+            toaster.create({
+                title: 'Сначала заверши текущую игру',
+                description:
+                    activeSession.mode === 'SOLO'
+                        ? 'У тебя уже есть активная одиночная сессия. Вернись в нее или дождись завершения, чтобы начать мультиплеер.'
+                        : 'У тебя уже есть активная многопользовательская сессия. Сначала заверши текущий матч.',
+                action: {
+                    label: 'Завершить сессию',
+                    onClick: () => {
+                        void (async () => {
+                            try {
+                                await abandonActiveGameSession().unwrap();
+                                await refetchActiveSession();
+                                toaster.create({
+                                    title: 'Сессия завершена',
+                                    description:
+                                        'Теперь можно создать многопользовательское лобби.',
+                                    type: 'success',
+                                });
+                            } catch (error) {
+                                toaster.create({
+                                    title: 'Не удалось завершить сессию',
+                                    description:
+                                        error instanceof Error
+                                            ? error.message
+                                            : 'Unexpected client-side error.',
+                                    type: 'error',
+                                });
+                            }
+                        })();
+                    },
+                },
+                type: 'info',
+            });
             return;
         }
 
@@ -258,11 +296,45 @@ const Home: FC = () => {
 
     return (
         <>
-            <Flex w="full" h="full" bg="gray.100">
-                <ProfilePanel
-                    openAddFriendsPanel={openAddFriendsPanel}
-                    openEditProfilePanel={openEditProfilePanel}
-                />
+            <Flex
+                w="full"
+                minH="100dvh"
+                bg="gray.100"
+                align="flex-start"
+                justify="space-between"
+                px={{ base: 4, md: 6, xl: 8 }}
+                py={{ base: 4, md: 6 }}
+                boxSizing="border-box"
+            >
+                <Flex
+                    w="full"
+                    h={{ base: 'auto', xl: 'calc(100dvh - 48px)' }}
+                    justifyContent="space-between"
+                    align="flex-start"
+                    gap={{ base: 4, xl: 8 }}
+                    direction={{ base: 'column', xl: 'row' }}
+                    minW={0}
+                >
+                    <Box
+                        w={{ base: 'full', xl: '520px' }}
+                        h={{ base: 'auto', xl: 'full' }}
+                        minW={0}
+                        flexShrink={0}
+                    >
+                        <GamesHistory />
+                    </Box>
+                    <Box
+                        w={{ base: 'full', xl: '420px' }}
+                        h={{ base: 'auto', xl: 'full' }}
+                        minW={0}
+                        flexShrink={0}
+                    >
+                        <ProfilePanel
+                            openAddFriendsPanel={openAddFriendsPanel}
+                            openEditProfilePanel={openEditProfilePanel}
+                        />
+                    </Box>
+                </Flex>
                 <EditProfilePanel
                     isOpen={isOpenEditProfilePanel}
                     onOpenChange={handleCloseEditProfilePanel}

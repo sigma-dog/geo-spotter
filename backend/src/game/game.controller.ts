@@ -49,6 +49,11 @@ export class GameController {
         return this.gameService.getActiveSession(userId);
     }
 
+    @Post('sessions/active/abandon')
+    abandonActiveSession(@CurrentUserId() userId: string) {
+        return this.gameService.abandonActiveSession(userId);
+    }
+
     @Get('sessions/recent')
     getRecentSessions(@CurrentUserId() userId: string) {
         return this.gameService.getRecentSessions(userId);

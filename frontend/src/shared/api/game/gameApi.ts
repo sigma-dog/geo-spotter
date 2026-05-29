@@ -10,6 +10,13 @@ import { apiMethods, tagTypes } from '../constants';
 
 const gameApi = api.injectEndpoints({
     endpoints: (build) => ({
+        abandonActiveGameSession: build.mutation<{ ok: true }, void>({
+            query: () => ({
+                url: '/game/sessions/active/abandon',
+                method: apiMethods.post,
+            }),
+            invalidatesTags: [tagTypes.GameSession],
+        }),
         completeGameTaskForDebug: build.mutation<
             GameSession,
             { sessionId: string; sessionTaskId: string }
@@ -90,6 +97,7 @@ const gameApi = api.injectEndpoints({
 });
 
 export const {
+    useAbandonActiveGameSessionMutation,
     useCompleteGameTaskForDebugMutation,
     useGetActiveGameSessionQuery,
     useGetIncomingMultiplayerLobbiesQuery,

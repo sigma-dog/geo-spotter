@@ -37,12 +37,13 @@ export const Friends: FC<FriendsProps> = ({ openAddFriendsPanel }) => {
         <Flex
             direction="column"
             w="full"
+            flex="1"
+            minH={0}
             gap={4}
             bgColor="bg.panel"
             borderRadius="lg"
             shadow="md"
             padding={4}
-            maxHeight="full"
             overflow="hidden"
         >
             <Flex align="center" justify="space-between">
@@ -63,7 +64,7 @@ export const Friends: FC<FriendsProps> = ({ openAddFriendsPanel }) => {
             </InputGroup>
 
             {data && (
-                <VStack w="full" overflowY="auto">
+                <VStack w="full" flex="1" minH={0} overflowY="auto">
                     {data.items.map((friend, index) => (
                         <FriendItem {...friend} key={index} />
                     ))}

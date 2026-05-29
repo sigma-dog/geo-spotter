@@ -81,6 +81,7 @@ export type GameSessionTaskView = {
 
 export type MultiplayerPlayerProgressView = {
     avatarUrl: string | null;
+    attemptsCount: number;
     completedTasksCount: number;
     isCurrentUser: boolean;
     status: 'ACTIVE' | 'COMPLETED' | 'ABANDONED';

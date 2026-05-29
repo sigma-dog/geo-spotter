@@ -15,16 +15,11 @@ export const ProfilePanel: FC<ProfilePanelProps> = ({
 }) => {
     return (
         <Flex
-            h="full"
-            w={400}
-            position="fixed"
-            right={0}
-            top={0}
-            padding={4}
+            w="full"
             direction="column"
-            borderRadius="lg"
             gap={4}
-            maxHeight="full"
+            maxH={{ base: 'none', xl: 'calc(100dvh - 48px)' }}
+            minH={0}
         >
             <ProfileInfo openEditProfilePanel={openEditProfilePanel} />
             <Friends openAddFriendsPanel={openAddFriendsPanel} />

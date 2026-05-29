@@ -9,6 +9,7 @@ import {
     Stack,
     Toast,
     Toaster as ChakraToaster,
+    VStack,
 } from '@chakra-ui/react';
 
 export const toaster = createToaster({
@@ -22,8 +23,8 @@ export const Toaster = () => {
             <ChakraToaster toaster={toaster} insetInline={{ mdDown: '4' }}>
                 {(toast) => (
                     <Toast.Root unstyled width={{ md: 'sm' }}>
-                        <HStack
-                            align="flex-start"
+                        <VStack
+                            align="stretch"
                             gap="3"
                             px="4"
                             py="3.5"
@@ -44,34 +45,48 @@ export const Toaster = () => {
                             borderColor="rgba(255,255,255,0.18)"
                             boxShadow="0 20px 40px rgba(0, 0, 0, 0.45)"
                         >
-                            <Box pt="0.5">
-                                {toast.type === 'loading' ? (
-                                    <Spinner size="sm" color="blue.200" />
-                                ) : (
-                                    <Toast.Indicator color="white" />
+                            <HStack align="flex-start" gap="3">
+                                <Box pt="0.5">
+                                    {toast.type === 'loading' ? (
+                                        <Spinner size="sm" color="blue.200" />
+                                    ) : (
+                                        <Toast.Indicator color="white" />
+                                    )}
+                                </Box>
+                                <Stack gap="1" flex="1" maxWidth="100%">
+                                    {toast.title && (
+                                        <Toast.Title color="white">
+                                            {toast.title}
+                                        </Toast.Title>
+                                    )}
+                                    {toast.description && (
+                                        <Toast.Description color="whiteAlpha.900">
+                                            {toast.description}
+                                        </Toast.Description>
+                                    )}
+                                </Stack>
+                                {toast.closable && (
+                                    <Toast.CloseTrigger color="white" />
                                 )}
-                            </Box>
-                            <Stack gap="1" flex="1" maxWidth="100%">
-                                {toast.title && (
-                                    <Toast.Title color="white">
-                                        {toast.title}
-                                    </Toast.Title>
-                                )}
-                                {toast.description && (
-                                    <Toast.Description color="whiteAlpha.900">
-                                        {toast.description}
-                                    </Toast.Description>
-                                )}
-                            </Stack>
+                            </HStack>
                             {toast.action && (
-                                <Toast.ActionTrigger color="white">
+                                <Toast.ActionTrigger
+                                    alignSelf="flex-start"
+                                    px="3"
+                                    py="1.5"
+                                    borderRadius="lg"
+                                    bg="whiteAlpha.200"
+                                    color="white"
+                                    fontWeight="700"
+                                    fontSize="sm"
+                                    _hover={{
+                                        bg: 'whiteAlpha.300',
+                                    }}
+                                >
                                     {toast.action.label}
                                 </Toast.ActionTrigger>
                             )}
-                            {toast.closable && (
-                                <Toast.CloseTrigger color="white" />
-                            )}
-                        </HStack>
+                        </VStack>
                     </Toast.Root>
                 )}
             </ChakraToaster>
