@@ -25,8 +25,8 @@ Geo Spotter is a monorepo for a geography game where players find real-world obj
 ├── backend/              # NestJS API, WebSocket gateway, Prisma schema
 ├── frontend/             # React + Vite client
 ├── services/
-│   └── ai-service/       # FastAPI service for selection verification
-└── AGENTS.md             # Local development instructions
+    └── ai-service/       # FastAPI service for selection verification
+
 ```
 
 ## Core modules
