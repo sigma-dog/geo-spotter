@@ -17,7 +17,7 @@ export const AuthRoute = () => {
             skip: !hasStoredSession,
         });
 
-    if (hasStoredSession && (isLoading || isFetching)) {
+    if (hasStoredSession && (isLoading || isFetching) && !data) {
         return (
             <Center minH="100vh">
                 <Spinner size="lg" />

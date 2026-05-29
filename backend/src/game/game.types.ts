@@ -14,6 +14,26 @@ export type VerificationResponse = {
     taskCompleted?: boolean;
 };
 
+export type VerificationProgressStage =
+    | 'started'
+    | 'preparing_asset'
+    | 'sending_to_ai'
+    | 'awaiting_ai_result'
+    | 'applying_result'
+    | 'syncing_session'
+    | 'completed'
+    | 'failed'
+    | 'fallback_mock';
+
+export type VerificationProgressEvent = {
+    attemptId: string | null;
+    message: string;
+    progress: number;
+    sessionId: string;
+    sessionTaskId: string;
+    stage: VerificationProgressStage;
+};
+
 export type PreparedSelectionAsset = {
     cropBuffer: Buffer;
     cropHeightPx: number;
@@ -59,6 +79,35 @@ export type GameSessionTaskView = {
     xpReward: number;
 };
 
+export type MultiplayerPlayerProgressView = {
+    avatarUrl: string | null;
+    completedTasksCount: number;
+    isCurrentUser: boolean;
+    status: 'ACTIVE' | 'COMPLETED' | 'ABANDONED';
+    totalTasksCount: number;
+    userId: string;
+    username: string;
+};
+
+export type MultiplayerLobbyParticipantView = {
+    avatarUrl: string | null;
+    isHost: boolean;
+    isCurrentUser: boolean;
+    respondedAt: string | null;
+    status: 'PENDING' | 'ACCEPTED' | 'DECLINED';
+    userId: string;
+    username: string;
+};
+
+export type MultiplayerLobbyView = {
+    createdAt: string;
+    hostUserId: string;
+    id: string;
+    matchId: string | null;
+    participants: MultiplayerLobbyParticipantView[];
+    status: 'PENDING' | 'STARTED' | 'CANCELLED';
+};
+
 export type GameSessionView = {
     awardedXp: number;
     id: string;
@@ -70,5 +119,9 @@ export type GameSessionView = {
     completedTasksCount: number;
     totalTasksCount: number;
     attemptsCount: number;
+    multiplayerMatchId: string | null;
+    winnerUserId: string | null;
+    winnerUsername: string | null;
+    players: MultiplayerPlayerProgressView[];
     tasks: GameSessionTaskView[];
 };

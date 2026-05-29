@@ -21,6 +21,10 @@ export const GameResultsDialog = ({
         (session?.completedTasksCount ?? 0) ===
             (session?.totalTasksCount ?? 0) &&
         (session?.totalTasksCount ?? 0) > 0;
+    const isCurrentUserWinner = session?.players.some(
+        (player) =>
+            player.isCurrentUser && player.userId === session.winnerUserId
+    );
 
     return (
         <Dialog.Root lazyMount open={isOpen} placement="center">
@@ -36,9 +40,15 @@ export const GameResultsDialog = ({
                         <Dialog.Body>
                             <VStack align="stretch" gap={3}>
                                 <Text>
-                                    {allTasksCompleted
-                                        ? 'Все задания выполнены. Одиночная сессия завершена.'
-                                        : 'Время сессии истекло. Показываем итоговый результат по выполненным заданиям.'}
+                                    {session?.mode === 'MULTIPLAYER'
+                                        ? session.winnerUserId
+                                            ? isCurrentUserWinner
+                                                ? 'Матч завершён твоей победой. Ты первым выполнил все задания.'
+                                                : `Матч завершён. Победил ${session.winnerUsername ?? 'другой игрок'}.`
+                                            : 'Матч завершён по таймеру. Показываем итоговый прогресс по заданиям.'
+                                        : allTasksCompleted
+                                          ? 'Все задания выполнены. Одиночная сессия завершена.'
+                                          : 'Время сессии истекло. Показываем итоговый результат по выполненным заданиям.'}
                                 </Text>
                                 <Text color="gray.600">
                                     Найдено предметов:{' '}
@@ -63,7 +73,9 @@ export const GameResultsDialog = ({
                                 onClick={onRestart}
                                 loading={isRestarting}
                             >
-                                Сыграть ещё раз
+                                {session?.mode === 'MULTIPLAYER'
+                                    ? 'Собрать новое лобби'
+                                    : 'Сыграть ещё раз'}
                             </Button>
                         </Dialog.Footer>
                     </Dialog.Content>

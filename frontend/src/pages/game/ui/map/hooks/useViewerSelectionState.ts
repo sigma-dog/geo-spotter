@@ -15,6 +15,7 @@ interface UseViewerSelectionStateParams {
     canDrawSelection: boolean;
     imageId: string | null;
     imageThumbUrl?: string | null;
+    onClearFeedback?: () => void;
     onSubmitSelection?: (
         selectionPayload: SelectionPayload,
         selectionDraft: SelectionPayloadDraft
@@ -28,6 +29,7 @@ export const useViewerSelectionState = ({
     canDrawSelection,
     imageId,
     imageThumbUrl,
+    onClearFeedback,
     onSubmitSelection,
     sessionId,
     selectedLocation,
@@ -46,17 +48,19 @@ export const useViewerSelectionState = ({
     const selectionLayerRef = useRef<HTMLDivElement | null>(null);
 
     const resetSelection = useCallback(() => {
+        onClearFeedback?.();
         setSelectionStartPoint(null);
         setDraftSelection(null);
         setSelectionDraft(null);
         setSelectionPayload(null);
-    }, []);
+    }, [onClearFeedback]);
 
     const toggleSelectionMode = useCallback(() => {
         setIsSelectionMode((currentState) => {
             const nextState = !currentState;
 
             if (!nextState) {
+                onClearFeedback?.();
                 setSelectionStartPoint(null);
                 setDraftSelection(null);
                 setSelectionDraft(null);
@@ -65,7 +69,7 @@ export const useViewerSelectionState = ({
 
             return nextState;
         });
-    }, []);
+    }, [onClearFeedback]);
 
     const getRelativePointerPoint = (
         event: React.PointerEvent<HTMLDivElement>
@@ -98,6 +102,7 @@ export const useViewerSelectionState = ({
         }
 
         event.preventDefault();
+        onClearFeedback?.();
         setSelectionPayload(null);
         setSelectionStartPoint(point);
         setDraftSelection({

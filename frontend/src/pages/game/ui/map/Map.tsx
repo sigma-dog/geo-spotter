@@ -22,6 +22,7 @@ import {
     useStartSoloGameSessionMutation,
     useSubmitGameTaskSelectionMutation,
 } from 'shared/api/game';
+import { getGameSocket } from 'shared/lib';
 import { toaster } from 'shared/ui/chakra/toaster';
 import { Tooltip } from 'shared/ui/chakra/tooltip';
 
@@ -31,8 +32,10 @@ import { useViewerSelectionState } from './hooks/useViewerSelectionState';
 import { createUserMarkerElement } from './utils';
 import type {
     GameSession,
+    MultiplayerProgressUpdatedEvent,
     SelectionPayload,
     SelectionVerificationResult,
+    VerificationProgressEvent,
 } from '../../lib/types';
 import { GameResultsDialog } from '../GameResultsDialog';
 import { GameSidebar } from '../GameSidebar';
@@ -49,7 +52,6 @@ const MAPILLARY_SEQUENCE_LAYER_ID = 'mapillary-sequence-panos';
 const MAPILLARY_IMAGE_LAYER_ID = 'mapillary-image-panos';
 const DEFAULT_MAP_CENTER: [number, number] = [12, 24];
 const DEFAULT_MAP_ZOOM = 1.6;
-const MIN_PANORAMA_MARKER_ZOOM = 6;
 const MAPILLARY_TILE_URL =
     'https://tiles.mapillary.com/maps/vtp/mly1_public/2/{z}/{x}/{y}?access_token=';
 
@@ -91,13 +93,14 @@ const loadImageAsBase64 = async (url: string) => {
     });
 };
 
-type PanoramaMarkerState = {
-    message: string;
-    status: 'idle' | 'ready' | 'error';
-};
-
 const getFirstPendingTask = (session: GameSession | null) => {
     return session?.tasks.find((task) => task.status !== 'COMPLETED') ?? null;
+};
+
+const getCurrentUserId = (session: GameSession | null) => {
+    return (
+        session?.players.find((player) => player.isCurrentUser)?.userId ?? null
+    );
 };
 
 const applySelectionResultToSession = (
@@ -158,7 +161,11 @@ export const Map = () => {
     const [completeGameTaskForDebug] = useCompleteGameTaskForDebugMutation();
     const [
         submitGameTaskSelection,
-        { data: selectionResult, isLoading: isSubmittingSelection },
+        {
+            data: selectionResult,
+            isLoading: isSubmittingSelection,
+            reset: resetSelectionResult,
+        },
     ] = useSubmitGameTaskSelectionMutation();
     const [sessionSnapshot, setSessionSnapshot] = useState<
         GameSession | null | undefined
@@ -167,6 +174,8 @@ export const Map = () => {
         useState<GameSession | null>(null);
     const [isResultsOpen, setIsResultsOpen] = useState(false);
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+    const [verificationProgress, setVerificationProgress] =
+        useState<VerificationProgressEvent | null>(null);
     const [debugCompletingTaskId, setDebugCompletingTaskId] = useState<
         string | null
     >(null);
@@ -185,12 +194,12 @@ export const Map = () => {
     );
     const isMapDraggingRef = useRef(false);
     const isSessionActiveRef = useRef(false);
-    const [panoramaMarkerState, setPanoramaMarkerState] =
-        useState<PanoramaMarkerState>({
-            message:
-                'Сначала начни игру, затем выбери точку Mapillary с доступной панорамой.',
-            status: 'idle',
-        });
+    // const [panoramaMarkerState, setPanoramaMarkerState] =
+    //     useState<PanoramaMarkerState>({
+    //         message:
+    //             'Сначала начни игру, затем выбери точку Mapillary с доступной панорамой.',
+    //         status: 'idle',
+    //     });
     const {
         canDrawSelection,
         captureCurrentFrame,
@@ -203,6 +212,39 @@ export const Map = () => {
     const currentWorldLocation =
         resolvedViewerState.panoramaLocation ?? selectedLocation;
     const isDebugMode = import.meta.env.DEV;
+    const hasShownWinnerToastRef = useRef<string | null>(null);
+    const currentPlayerId = getCurrentUserId(session);
+    const clearSelectionFeedback = useCallback(() => {
+        resetSelectionResult();
+        setVerificationProgress(null);
+    }, [resetSelectionResult]);
+
+    useEffect(() => {
+        const socket = getGameSocket();
+
+        if (!socket) {
+            return;
+        }
+
+        const handleVerificationProgress = (
+            payload: VerificationProgressEvent
+        ) => {
+            if (payload.sessionId !== session?.id) {
+                return;
+            }
+
+            setVerificationProgress(payload);
+        };
+
+        socket.on('game:verification-progress', handleVerificationProgress);
+
+        return () => {
+            socket.off(
+                'game:verification-progress',
+                handleVerificationProgress
+            );
+        };
+    }, [session?.id]);
 
     const activeTask = session
         ? (session.tasks.find(
@@ -229,6 +271,7 @@ export const Map = () => {
         canDrawSelection,
         imageId: resolvedViewerState.imageId,
         imageThumbUrl: resolvedViewerState.imageThumbUrl,
+        onClearFeedback: clearSelectionFeedback,
         onSubmitSelection: async (
             currentSelectionPayload,
             currentSelectionDraft
@@ -346,8 +389,14 @@ export const Map = () => {
                         setSessionSnapshot(refreshedSession);
                     }
 
+                    window.setTimeout(() => {
+                        setVerificationProgress(null);
+                    }, 600);
+
                     if (result.taskCompleted) {
-                        resetSelection();
+                        window.setTimeout(() => {
+                            resetSelection();
+                        }, 1400);
                     }
                 } catch (error) {
                     console.error(
@@ -369,6 +418,9 @@ export const Map = () => {
                                 : errorDescription,
                         type: 'error',
                     });
+                    window.setTimeout(() => {
+                        setVerificationProgress(null);
+                    }, 1200);
                 }
             })();
         },
@@ -415,8 +467,76 @@ export const Map = () => {
         hasSelectedSpot && (isSessionActive || isResultsOpen);
 
     useEffect(() => {
+        const matchId = session?.multiplayerMatchId;
+
+        if (!matchId) {
+            return;
+        }
+
+        const socket = getGameSocket();
+
+        if (!socket) {
+            return;
+        }
+
+        socket.emit('game:join-match', { matchId });
+
+        const handleProgressUpdated = (
+            payload: MultiplayerProgressUpdatedEvent
+        ) => {
+            if (payload.matchId !== matchId) {
+                return;
+            }
+
+            void (async () => {
+                const refreshedSession = await refetchActiveSession().unwrap();
+
+                if (!refreshedSession) {
+                    return;
+                }
+
+                setSessionSnapshot(refreshedSession);
+
+                if (
+                    payload.winnerUserId &&
+                    hasShownWinnerToastRef.current !== payload.winnerUserId
+                ) {
+                    hasShownWinnerToastRef.current = payload.winnerUserId;
+                    toaster.create({
+                        title:
+                            payload.winnerUserId === currentPlayerId
+                                ? 'Ты победил'
+                                : 'Матч завершён',
+                        description:
+                            payload.winnerUserId === currentPlayerId
+                                ? 'Ты первым выполнил все задания.'
+                                : `${payload.winnerUsername ?? 'Другой игрок'} закрыл все задания раньше остальных.`,
+                        type:
+                            payload.winnerUserId === currentPlayerId
+                                ? 'success'
+                                : 'info',
+                    });
+                }
+            })();
+        };
+
+        socket.on('game:multiplayer-progress-updated', handleProgressUpdated);
+
+        return () => {
+            socket.off(
+                'game:multiplayer-progress-updated',
+                handleProgressUpdated
+            );
+        };
+    }, [currentPlayerId, refetchActiveSession, session?.multiplayerMatchId]);
+
+    useEffect(() => {
         isSessionActiveRef.current = isSessionActive;
     }, [isSessionActive]);
+
+    useEffect(() => {
+        hasShownWinnerToastRef.current = null;
+    }, [session?.multiplayerMatchId]);
 
     const focusMapOnLocation = useCallback(
         (
@@ -445,55 +565,6 @@ export const Map = () => {
         [hasSelectedSpot]
     );
 
-    const updateCoverageHint = useCallback(() => {
-        const map = mapRef.current;
-
-        if (!isSessionActive) {
-            setPanoramaMarkerState({
-                message:
-                    'Нажми "Начать игру", чтобы получить задания и начать поиск предметов.',
-                status: 'idle',
-            });
-            return;
-        }
-
-        if (!accessToken) {
-            setPanoramaMarkerState({
-                message:
-                    'Добавь `VITE_MAPILLARY_ACCESS_TOKEN`, чтобы загрузить покрытие Mapillary.',
-                status: 'error',
-            });
-            return;
-        }
-
-        if (!map) {
-            return;
-        }
-
-        if (map.getZoom() < MIN_PANORAMA_MARKER_ZOOM) {
-            setPanoramaMarkerState({
-                message: `Приблизь карту до zoom ${MIN_PANORAMA_MARKER_ZOOM}, чтобы появились линии и точки покрытия Mapillary.`,
-                status: 'idle',
-            });
-            return;
-        }
-
-        if (map.getZoom() < 14) {
-            setPanoramaMarkerState({
-                message:
-                    'Кликни по зелёной линии Mapillary, чтобы открыть панораму этого трека.',
-                status: 'ready',
-            });
-            return;
-        }
-
-        setPanoramaMarkerState({
-            message:
-                'На этом зуме можно кликать и по зелёным точкам, и по линиям Mapillary.',
-            status: 'ready',
-        });
-    }, [accessToken, isSessionActive]);
-
     const handleStartGame = useCallback(() => {
         void (async () => {
             try {
@@ -507,9 +578,6 @@ export const Map = () => {
                 setSelectedTaskId(
                     getFirstPendingTask(startedSession)?.id ?? null
                 );
-                window.setTimeout(() => {
-                    updateCoverageHint();
-                }, 0);
 
                 toaster.create({
                     title: 'Игра началась',
@@ -534,12 +602,16 @@ export const Map = () => {
                 });
             }
         })();
-    }, [
-        resetSelectedSpot,
-        resetSelection,
-        startSoloGameSession,
-        updateCoverageHint,
-    ]);
+    }, [resetSelectedSpot, resetSelection, startSoloGameSession]);
+
+    const handleRestart = useCallback(() => {
+        if (session?.mode === 'MULTIPLAYER') {
+            navigate('/home');
+            return;
+        }
+
+        handleStartGame();
+    }, [handleStartGame, navigate, session?.mode]);
 
     const handleCompleteTaskForDebug = useCallback(
         (taskId: string) => {
@@ -728,11 +800,6 @@ export const Map = () => {
         };
 
         map.on('load', () => {
-            if (!accessToken) {
-                updateCoverageHint();
-                return;
-            }
-
             map.addSource(MAPILLARY_TILE_SOURCE_ID, {
                 maxzoom: 14,
                 minzoom: 0,
@@ -803,7 +870,6 @@ export const Map = () => {
             registerInteractiveLayer(MAPILLARY_OVERVIEW_LAYER_ID);
             registerInteractiveLayer(MAPILLARY_SEQUENCE_LAYER_ID);
             registerInteractiveLayer(MAPILLARY_IMAGE_LAYER_ID);
-            updateCoverageHint();
         });
 
         map.on('dragstart', () => {
@@ -816,14 +882,7 @@ export const Map = () => {
             }, 0);
         });
 
-        map.on('moveend', () => {
-            updateCoverageHint();
-        });
-
         mapRef.current = map;
-        window.setTimeout(() => {
-            updateCoverageHint();
-        }, 0);
 
         return () => {
             customMarkerRef.current?.remove();
@@ -835,19 +894,8 @@ export const Map = () => {
         focusMapOnLocation,
         resetSelection,
         selectScene,
-        updateCoverageHint,
         updateSelectedMarker,
     ]);
-
-    useEffect(() => {
-        const timeoutId = window.setTimeout(() => {
-            updateCoverageHint();
-        }, 0);
-
-        return () => {
-            window.clearTimeout(timeoutId);
-        };
-    }, [updateCoverageHint]);
 
     useEffect(() => {
         if (!selectedLocation) {
@@ -924,7 +972,7 @@ export const Map = () => {
                 isOpen={isResultsOpen}
                 session={completedSession}
                 onGoHome={() => navigate('/home')}
-                onRestart={handleStartGame}
+                onRestart={handleRestart}
                 isRestarting={isStartingGame}
             />
 
@@ -945,8 +993,10 @@ export const Map = () => {
                     isSubmittingSelection={isSubmittingSelection}
                     selectedTaskId={activeTask?.id ?? null}
                     selectionPayload={selectionPayload}
+                    selectionResult={selectionResult ?? null}
                     selectionLayerRef={selectionLayerRef}
                     taskOptions={availableTaskOptions}
+                    verificationProgress={verificationProgress}
                     onChangeTask={(taskId) => {
                         setSelectedTaskId(taskId);
                     }}
@@ -959,7 +1009,6 @@ export const Map = () => {
                 <ViewerStatusOverlay
                     isSubmittingSelection={isSubmittingSelection}
                     selectionDraft={selectionDraft}
-                    selectionResult={selectionResult ?? null}
                     state={resolvedViewerState}
                 />
             </Box>
@@ -983,7 +1032,7 @@ export const Map = () => {
                 transition="all 0.35s ease"
             >
                 <Box ref={mapContainerRef} h="full" w="full" />
-                {(!isSessionActive || !hasSelectedSpot) && (
+                {/* {(!isSessionActive || !hasSelectedSpot) && (
                     <Box
                         position="absolute"
                         left={3}
@@ -1005,7 +1054,7 @@ export const Map = () => {
                             {panoramaMarkerState.message}
                         </Text>
                     </Box>
-                )}
+                )} */}
                 {shouldKeepPanoramaVisible && (
                     <IconButton
                         aria-label="Открыть карту на весь экран"

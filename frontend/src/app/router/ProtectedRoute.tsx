@@ -24,7 +24,7 @@ export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
         return <Navigate to="/auth" replace />;
     }
 
-    if (isLoading || isFetching) {
+    if ((isLoading || isFetching) && !data) {
         return (
             <Center minH="100vh">
                 <Spinner size="lg" />

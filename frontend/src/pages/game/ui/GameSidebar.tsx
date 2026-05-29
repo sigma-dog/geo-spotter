@@ -148,7 +148,9 @@ export const GameSidebar = ({
                     borderColor="red.100"
                 >
                     <Text fontSize="sm" color="red.400">
-                        Одиночная игра
+                        {session?.mode === 'MULTIPLAYER'
+                            ? 'Многопользовательская игра'
+                            : 'Одиночная игра'}
                     </Text>
                     <Text fontSize="xl" fontWeight="700" color="red.700">
                         {isSessionActive
@@ -163,7 +165,16 @@ export const GameSidebar = ({
                                 ? 'Перемещайся по карте, открывай панорамы и отправляй выделение на проверку.'
                                 : 'Выбери точку на карте или кликни по покрытию Mapillary, чтобы открыть панораму.'
                             : isSessionCompleted
-                              ? 'Все задания выполнены. Можно вернуться в хаб или сразу начать новую сессию.'
+                              ? session?.mode === 'MULTIPLAYER'
+                                  ? session.winnerUserId
+                                      ? session.winnerUserId ===
+                                        session.players.find(
+                                            (player) => player.isCurrentUser
+                                        )?.userId
+                                          ? 'Матч завершён твоей победой. Можно вернуться в хаб или собрать новое лобби.'
+                                          : `Матч завершён. Победил ${session.winnerUsername ?? 'другой игрок'}.`
+                                      : 'Матч завершён. Время вышло раньше, чем кто-то успел закрыть все задания.'
+                                  : 'Все задания выполнены. Можно вернуться в хаб или сразу начать новую сессию.'
                               : 'Подбираем задания и готовим карту к поиску объектов.'}
                     </Text>
                     {remainingTime && (
@@ -185,6 +196,74 @@ export const GameSidebar = ({
                         </HStack>
                     )}
                 </Box>
+
+                {session?.mode === 'MULTIPLAYER' &&
+                    session.players.length > 0 && (
+                        <Box
+                            p={4}
+                            borderRadius="xl"
+                            bg="orange.50"
+                            borderWidth="1px"
+                            borderColor="orange.100"
+                        >
+                            <Text fontSize="sm" color="orange.600">
+                                Прогресс игроков
+                            </Text>
+                            <VStack align="stretch" gap={2} mt={3}>
+                                {session.players.map((player) => (
+                                    <HStack
+                                        key={player.userId}
+                                        justify="space-between"
+                                        p={3}
+                                        borderRadius="lg"
+                                        bg={
+                                            player.isCurrentUser
+                                                ? 'white'
+                                                : 'orange.100/60'
+                                        }
+                                    >
+                                        <Box>
+                                            <Text
+                                                fontWeight="700"
+                                                color="gray.800"
+                                            >
+                                                {player.isCurrentUser
+                                                    ? `${player.username} (ты)`
+                                                    : player.username}
+                                            </Text>
+                                            <Text
+                                                fontSize="sm"
+                                                color="gray.600"
+                                            >
+                                                {player.completedTasksCount}/
+                                                {player.totalTasksCount} заданий
+                                            </Text>
+                                        </Box>
+                                        <Text
+                                            fontSize="sm"
+                                            fontWeight="700"
+                                            color={
+                                                session.winnerUserId ===
+                                                player.userId
+                                                    ? 'green.600'
+                                                    : player.status ===
+                                                        'COMPLETED'
+                                                      ? 'orange.600'
+                                                      : 'gray.500'
+                                            }
+                                        >
+                                            {session.winnerUserId ===
+                                            player.userId
+                                                ? 'Победитель'
+                                                : player.status === 'COMPLETED'
+                                                  ? 'Финишировал'
+                                                  : 'В игре'}
+                                        </Text>
+                                    </HStack>
+                                ))}
+                            </VStack>
+                        </Box>
+                    )}
 
                 {currentUser && (
                     <Box

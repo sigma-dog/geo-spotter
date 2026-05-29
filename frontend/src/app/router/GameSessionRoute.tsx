@@ -9,10 +9,9 @@ type GameSessionRouteProps = {
 };
 
 export const GameSessionRoute = ({ children }: GameSessionRouteProps) => {
-    const { data, isFetching, isLoading, isSuccess } =
-        useGetActiveGameSessionQuery();
+    const { data, isLoading, isSuccess } = useGetActiveGameSessionQuery();
 
-    if (isLoading || isFetching) {
+    if (isLoading && !data) {
         return (
             <Center minH="100vh">
                 <Spinner size="lg" />

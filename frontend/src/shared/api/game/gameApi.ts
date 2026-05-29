@@ -1,5 +1,6 @@
 import type {
     GameSession,
+    MultiplayerLobby,
     SelectionPayload,
     SelectionVerificationResult,
 } from 'pages/game/lib/types';
@@ -40,6 +41,40 @@ const gameApi = api.injectEndpoints({
             }),
             invalidatesTags: [tagTypes.GameSession],
         }),
+        createMultiplayerLobby: build.mutation<
+            MultiplayerLobby,
+            { friendIds: string[] }
+        >({
+            query: (body) => ({
+                url: '/game/lobbies',
+                method: apiMethods.post,
+                body,
+            }),
+            invalidatesTags: [tagTypes.GameSession],
+        }),
+        getPendingMultiplayerLobby: build.query<MultiplayerLobby | null, void>({
+            query: () => ({
+                url: '/game/lobbies/pending',
+                method: apiMethods.get,
+            }),
+        }),
+        getIncomingMultiplayerLobbies: build.query<MultiplayerLobby[], void>({
+            query: () => ({
+                url: '/game/lobbies/incoming',
+                method: apiMethods.get,
+            }),
+        }),
+        respondToMultiplayerLobby: build.mutation<
+            MultiplayerLobby | null,
+            { accept: boolean; lobbyId: string }
+        >({
+            query: (body) => ({
+                url: '/game/lobbies/respond',
+                method: apiMethods.post,
+                body,
+            }),
+            invalidatesTags: [tagTypes.GameSession],
+        }),
         submitGameTaskSelection: build.mutation<
             SelectionVerificationResult,
             SelectionPayload
@@ -57,7 +92,11 @@ const gameApi = api.injectEndpoints({
 export const {
     useCompleteGameTaskForDebugMutation,
     useGetActiveGameSessionQuery,
+    useGetIncomingMultiplayerLobbiesQuery,
+    useGetPendingMultiplayerLobbyQuery,
     useGetRecentGameSessionsQuery,
+    useCreateMultiplayerLobbyMutation,
+    useRespondToMultiplayerLobbyMutation,
     useStartSoloGameSessionMutation,
     useSubmitGameTaskSelectionMutation,
 } = gameApi;
