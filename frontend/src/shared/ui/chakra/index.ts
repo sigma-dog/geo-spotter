@@ -1,0 +1,1 @@
+export { AppChakraProvider } from './ChakraProvider';

@@ -1,0 +1,42 @@
+version: '3.9'
+
+services:
+  postgres:
+    container_name: postgres
+    image: postgres:18
+    # restart: always
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    ports:
+      - 13000:5432
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    networks:
+      - geo-spotter
+
+  redis:
+    container_name: geo-spotter-redis
+    image: redis:7-alpine
+    ports:
+      - 6379:6379
+    volumes:
+      - redis_data:/data
+    networks:
+      - geo-spotter
+
+  ai-service:
+    container_name: geo-spotter-ai-service
+    build:
+      context: ../services/ai-service
+    ports:
+      - 8000:8000
+    networks:
+      - geo-spotter
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  geo-spotter:

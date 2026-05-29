@@ -1,0 +1,386 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id String @id @default(uuid())
+
+  username     String
+  email        String
+  passwordHash String   @map("password_hash")
+  level        Int      @default(0)
+  xp           Int      @default(0)
+  birthDate    DateTime @default(now()) @map("birth_date")
+  avatarUrl    String?  @map("avatar_url")
+
+  currentHashedRefreshToken String? @map("current_hashed_refresh_token")
+
+  achievements         UserAchievement[]
+  gameSessions     GameSession[]
+  hostedMultiplayerMatches MultiplayerMatch[] @relation("MultiplayerMatchHost")
+  hostedMultiplayerLobbies MultiplayerLobby[] @relation("MultiplayerLobbyHost")
+  gameTaskAttempts TaskAttempt[]
+  multiplayerLobbyParticipants MultiplayerLobbyParticipant[]
+  tasksResults         UserTaskResult[]
+  friendshipsInitiated Friendship[]      @relation("FriendshipInitiator")
+  friendshipsReceived  Friendship[]      @relation("FriendshipReceiver")
+  wonMultiplayerMatches MultiplayerMatch[] @relation("MultiplayerMatchWinner")
+
+  createdAt DateTime @default(now()) @map("created_ad")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+model Friendship {
+  id String @id @default(uuid())
+
+  requesterId String @map("requester_id")
+  addresseeId String @map("addressee_id")
+
+  requester User @relation("FriendshipInitiator", fields: [requesterId], references: [id])
+  addressee User @relation("FriendshipReceiver", fields: [addresseeId], references: [id])
+
+  status FriendshipStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([requesterId, addresseeId])
+  @@map("friendships")
+}
+
+model Achievement {
+  id String @id @default(uuid())
+
+  title       String
+  description String
+
+  users UserAchievement[]
+
+  createdAt DateTime @default(now()) @map("created_ad")
+
+  @@map("achievements")
+}
+
+model UserAchievement {
+  id String @id @default(uuid())
+
+  user   User   @relation(fields: [userId], references: [id])
+  userId String @map("user_id")
+
+  achievement   Achievement @relation(fields: [achievementId], references: [id])
+  achievementId String      @map("achievement_id")
+
+  unlockedAt DateTime @default(now()) @map("unlocked_ad")
+
+  @@unique([userId, achievementId])
+  @@map("user_achievements")
+}
+
+model Task {
+  id String @id @default(uuid())
+
+  title       String
+  description String
+  difficulty  Difficulty @default(MEDIUM)
+  xpReward    Int        @default(0) @map("xp_reward")
+
+  createdAt DateTime @default(now()) @map("created_ad")
+
+  results UserTaskResult[]
+
+  @@map("tasks")
+}
+
+model GameTask {
+  id String @id @default(uuid())
+
+  externalId  String  @unique @map("external_id")
+  title       String
+  description String?
+  target      String
+  difficulty  Difficulty @default(EASY)
+  xpReward    Int        @default(0) @map("xp_reward")
+
+  attempts TaskAttempt[]
+  sessionTasks GameSessionTask[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("game_tasks")
+}
+
+model GameSession {
+  id String @id @default(uuid())
+
+  mode   GameSessionMode
+  status GameSessionStatus
+
+  startedAt  DateTime  @default(now()) @map("started_at")
+  finishedAt DateTime? @map("finished_at")
+
+  user   User   @relation(fields: [userId], references: [id])
+  userId String @map("user_id")
+
+  multiplayerMatch   MultiplayerMatch? @relation(fields: [multiplayerMatchId], references: [id])
+  multiplayerMatchId String?           @map("multiplayer_match_id")
+
+  tasks TaskAttempt[]
+  gameSessionTasks GameSessionTask[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId, status, mode])
+  @@index([multiplayerMatchId, status])
+  @@map("game_sessions")
+}
+
+model MultiplayerMatch {
+  id String @id @default(uuid())
+
+  status MultiplayerMatchStatus
+
+  host   User   @relation("MultiplayerMatchHost", fields: [hostId], references: [id])
+  hostId String @map("host_id")
+
+  winner   User?   @relation("MultiplayerMatchWinner", fields: [winnerUserId], references: [id])
+  winnerUserId String? @map("winner_user_id")
+
+  startedAt  DateTime  @default(now()) @map("started_at")
+  finishedAt DateTime? @map("finished_at")
+
+  lobby MultiplayerLobby?
+  sessions GameSession[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([hostId, status])
+  @@index([winnerUserId])
+  @@map("multiplayer_matches")
+}
+
+model MultiplayerLobby {
+  id String @id @default(uuid())
+
+  status MultiplayerLobbyStatus
+
+  host   User   @relation("MultiplayerLobbyHost", fields: [hostId], references: [id])
+  hostId String @map("host_id")
+
+  match   MultiplayerMatch? @relation(fields: [matchId], references: [id])
+  matchId String?           @unique @map("match_id")
+
+  participants MultiplayerLobbyParticipant[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([hostId, status])
+  @@map("multiplayer_lobbies")
+}
+
+model MultiplayerLobbyParticipant {
+  id String @id @default(uuid())
+
+  status MultiplayerLobbyParticipantStatus
+  respondedAt DateTime? @map("responded_at")
+
+  lobby   MultiplayerLobby @relation(fields: [lobbyId], references: [id])
+  lobbyId String           @map("lobby_id")
+
+  user   User   @relation(fields: [userId], references: [id])
+  userId String @map("user_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([lobbyId, userId])
+  @@index([userId, status])
+  @@map("multiplayer_lobby_participants")
+}
+
+model GameSessionTask {
+  id String @id @default(uuid())
+
+  orderIndex Int @map("order_index")
+  status     GameSessionTaskStatus
+  completedAt DateTime? @map("completed_at")
+
+  session   GameSession @relation(fields: [sessionId], references: [id])
+  sessionId String      @map("session_id")
+
+  gameTask   GameTask @relation(fields: [gameTaskId], references: [id])
+  gameTaskId String   @map("game_task_id")
+
+  completedByAttempt   TaskAttempt? @relation("CompletedTaskAttempts", fields: [completedByAttemptId], references: [id])
+  completedByAttemptId String?      @unique @map("completed_by_attempt_id")
+
+  attempts TaskAttempt[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([sessionId, orderIndex])
+  @@index([sessionId, status])
+  @@map("game_session_tasks")
+}
+
+model TaskAttempt {
+  id String @id @default(uuid())
+
+  capturedAt DateTime @map("captured_at")
+
+  imageId           String  @map("image_id")
+  mapillaryImageUrl String? @map("mapillary_image_url")
+
+  selectionLeft   Float @map("selection_left")
+  selectionTop    Float @map("selection_top")
+  selectionWidth  Float @map("selection_width")
+  selectionHeight Float @map("selection_height")
+
+  worldLat Float @map("world_lat")
+  worldLng Float @map("world_lng")
+
+  sourceImageWidth  Int? @map("source_image_width")
+  sourceImageHeight Int? @map("source_image_height")
+  cropWidthPx       Int? @map("crop_width_px")
+  cropHeightPx      Int? @map("crop_height_px")
+
+  status     TaskAttemptStatus
+  verdict    TaskAttemptVerdict?
+  confidence Float?
+  reason     String?
+  source     String?
+
+  user   User   @relation(fields: [userId], references: [id])
+  userId String @map("user_id")
+
+  session   GameSession? @relation(fields: [sessionId], references: [id])
+  sessionId String?      @map("session_id")
+
+  sessionTask   GameSessionTask? @relation(fields: [sessionTaskId], references: [id])
+  sessionTaskId String?          @map("session_task_id")
+
+  completedSessionTasks GameSessionTask[] @relation("CompletedTaskAttempts")
+
+  gameTask   GameTask @relation(fields: [gameTaskId], references: [id])
+  gameTaskId String   @map("game_task_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId, createdAt])
+  @@index([gameTaskId, createdAt])
+  @@index([sessionId, createdAt])
+  @@index([sessionTaskId, createdAt])
+  @@map("task_attempts")
+}
+
+model UserTaskResult {
+  id String @id @default(uuid())
+
+  attemptsCount Int     @default(0) @map("attempts_count")
+  isSolved      Boolean @default(false) @map("is_solved")
+  timeSpent     Int     @default(0) @map("time_spent")
+  xpEarned      Int     @default(0) @map("xp_earned")
+
+  user   User   @relation(fields: [userId], references: [id])
+  userId String @map("user_id")
+
+  task   Task   @relation(fields: [taskId], references: [id])
+  taskId String @map("task_id")
+
+  createdAt DateTime @default(now()) @map("created_ad")
+
+  @@unique([userId, taskId])
+  @@map("user_task_results")
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+  LEGENDARY
+
+  @@map("difficulty_enum")
+}
+
+enum FriendshipStatus {
+  PENDING
+  ACCEPTED
+  BLOCKED
+
+  @@map("friendship_status")
+}
+
+enum TaskAttemptStatus {
+  PENDING
+  COMPLETED
+  FAILED
+
+  @@map("task_attempt_status")
+}
+
+enum MultiplayerMatchStatus {
+  ACTIVE
+  COMPLETED
+  ABANDONED
+
+  @@map("multiplayer_match_status")
+}
+
+enum MultiplayerLobbyStatus {
+  PENDING
+  STARTED
+  CANCELLED
+
+  @@map("multiplayer_lobby_status")
+}
+
+enum MultiplayerLobbyParticipantStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+
+  @@map("multiplayer_lobby_participant_status")
+}
+
+enum TaskAttemptVerdict {
+  MATCH
+  NO_MATCH
+  UNCERTAIN
+
+  @@map("task_attempt_verdict")
+}
+
+enum GameSessionMode {
+  SOLO
+  MULTIPLAYER
+
+  @@map("game_session_mode")
+}
+
+enum GameSessionStatus {
+  ACTIVE
+  COMPLETED
+  ABANDONED
+
+  @@map("game_session_status")
+}
+
+enum GameSessionTaskStatus {
+  PENDING
+  COMPLETED
+
+  @@map("game_session_task_status")
+}

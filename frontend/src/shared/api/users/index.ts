@@ -1,0 +1,1 @@
+export { useLazyGetUsersQuery } from './usersApi';
